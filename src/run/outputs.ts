@@ -56,16 +56,18 @@ export async function writeOutputs(
       `Output directory ${final} already exists; refusing to overwrite a previous run`,
     );
   }
+  let ownsPartial = false;
   try {
-    await rm(partial, { recursive: true, force: true });
-    await mkdir(partial, { recursive: true, mode: 0o700 });
+    await mkdir(outRoot, { recursive: true, mode: 0o700 });
+    await mkdir(partial, { mode: 0o700 });
+    ownsPartial = true;
     for (const [name, content] of Object.entries(files)) {
       await writeFile(join(partial, name), content, { mode: 0o600, flush: true });
     }
     await writeFile(join(partial, OUTPUT_MANIFEST), manifest, { mode: 0o600, flush: true });
     await rename(partial, final);
   } catch (error) {
-    await rm(partial, { recursive: true, force: true }).catch(() => undefined);
+    if (ownsPartial) await rm(partial, { recursive: true, force: true }).catch(() => undefined);
     throw new IoError(`Could not write outputs under ${outRoot}`, { cause: error });
   }
   return final;

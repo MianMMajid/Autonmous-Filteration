@@ -1,59 +1,63 @@
-# Submission notes
+# Submission notes — rules 2026-10-08.9
 
-## 1. Mapping CSV
+## Mapping and reproducible handoff
 
-Run `pnpm sync` for fresh upstream data, or `pnpm sync --dry-run` to replay
-archived inputs. Resolve the verified immutable output with
-`pnpm cli published-path`; submit its `mapping.csv` and `review.csv`.
-The CSV uses exactly `acme_pcroject_id,pulley_project_id,status`.
+Current fresh publication: **2026-10-08T20-01-47-980Z**, source acquired
+**2026-10-08T20:01:49.356Z**. Resolve and verify it with `pnpm cli published-path`.
+Submit that directory's `mapping.csv`, `review.csv`, and generated `handoff.md`,
+plus these notes and `docs/validation/2026-10-08-record-review.md`.
+The exact CSV header is `acme_pcroject_id,pulley_project_id,status`.
 
-## 2a. Match coverage and correctness
+Each future sync generates its own handoff from the same report and provenance
+as its mapping. Do not reuse these snapshot counts for another publication.
+The generated file contains a draft message, not a sent communication.
 
-Rules 2026-10-08.8 produce **324 matches, 26 review rows, and 50 no-matches**
-on the 400-row 2026-10-08 archive. Automatic coverage is **81%**. The narrowed temporal rule accepts a unique store candidate for a single Acme
-project without requiring an invented year suffix. Conflicts and ambiguity still
-require review.
+## Coverage and estimated correctness
 
-**Correctness has not been independently measured.** Earlier estimates of
-96% precision, 81% correctly matched projects, and 94% correct outcomes were
-not supported by adjudicated labels and must not be used as release claims.
-A correct no-match is a valid outcome; review is an abstention, not proof of
-correctness. Follow `docs/adjudication/README.md` before reporting measured
-precision, with label coverage and sample sizes. No 100% accuracy guarantee
-is implied by the automated tests.
+The current snapshot has **323 matches, 27 review rows and 50 no-matches** out
+of 400 rows: **80.75% automatic coverage**, with no applied human overrides.
 
-## 2b. Draft message to the Account Lead — not sent
+For the brief's requested estimate of the share we think is right, the
+implementer's 50-case source-record review gives a provisional **about 90% of
+resolved outcomes supported** (including no-matches), after weighting strata
+and counting unresolved sampled cases as unsupported. See the linked review
+for every case, selection method and denominators. Four sampled cases need
+permit-level confirmation, including two accepted umbrella matches with
+plausible dedicated alternatives. This is a subjective estimate from supplied
+records, not independent adjudication, measured production accuracy, or proof
+of zero false positives. The 27 review abstentions are excluded from its
+resolved-outcome denominator. A strict all-400 denominator gives 84.2% supported.
 
-> Hi! I've built the SiteLedger-to-Pulley matching tool. One command downloads
-> the reports and Pulley projects, archives the inputs, and writes the mapping
-> CSV plus explanations and candidates for rows needing review.
+Earlier unsubstantiated precision claims remain withdrawn. Independent permit
+labels, separate from overrides and tuning data, are still needed to measure
+precision and false positives (`docs/adjudication/README.md`).
+
+## Draft message to the Account Lead — not sent
+
+> Hi! I've built a CLI that downloads SiteLedger's three reports and the Pulley
+> projects, then creates the requested mapping CSV and a review list explaining
+> uncertain cases. Run `pnpm sync` for updated data and `pnpm cli published-path`
+> to locate the verified results. Human review decisions can persist across runs
+> and are checked again when source data changes.
 >
-> On the archived October 8 dataset, the current rules accept 324 of 400 rows,
-> hold 26 for review, and return no match for 50. These are coverage counts;
-> we still need independent checks to establish correctness. The matcher now
-> holds conflicting IDs, years, dates, addresses, and lifecycle evidence for
-> review rather than treating a high score as sufficient proof.
+> The latest snapshot matches 323 of 400 rows, holds 27 for review, and finds no
+> match for 50. My provisional record-based estimate is about 90% supported
+> resolved outcomes; this is not independently verified accuracy. Four sampled
+> cases need permit-level checks, and the initial review backlog needs onboarding.
+> We should measure new cases on changing data before promising only a few
+> reviews each week.
 >
-> Pathfinder and signage are excluded. Market and Warehouse Club identities
-> stay separate, cancellation must agree, and shared permits cannot span
-> buildings or program years. Verified human decisions can supply missing
-> evidence and resolve street or milestone discrepancies with an explanatory
-> note. Hard identity conflicts require correction. Overrides are checked again
-> on each run.
+> The matcher separates Market from Warehouse Club, uses full store/sequence
+> identities, tolerates jurisdiction-city differences, supports evidenced shared
+> store/year permits including EV, keeps signage separate, excludes Pathfinder,
+> and enforces cancellation agreement. It retains raw inputs, decision evidence
+> and human overrides for reproduction.
 >
-> Scheduling, verified outputs, backups, and monitoring support are included;
-> live scheduled operation still requires deployment setup and verification.
-> The 26-row initial review backlog should be resolved before agreeing on an
-> acceptable ongoing weekly review workload.
->
-> Could we schedule 30 minutes to review the disputed cases, run the tool on
-> updated data, and agree on the independent validation needed before relying
-> on automatic matches?
+> Fresh acquisition, reviewed reruns, upstream changes, backup/restore, corruption
+> detection and missed-run detection have been exercised locally. Scheduling and
+> monitoring support are ready for configuration; live operation still needs a
+> persistent host, named operators, independent alert delivery and off-host backup
+> verification. Could we meet for 30 minutes to review the disputed cases, run the
+> updated-data demo and onboard your team?
 
-## What was built
-
-A TypeScript CLI with archived acquisition, normalized identities and addresses,
-a deterministic six-tier candidate matcher with a shared acceptance safety gate,
-review and audit outputs, validated overrides, publication invariants, independent
-label evaluation, and deployment/backup/monitoring support. See `MATCHING.md`,
-`VALIDATION.md`, and `DEPLOYMENT.md` for behavior and remaining release work.
+See `READINESS_COMPLETION.md` for verification evidence and release conditions.

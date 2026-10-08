@@ -30,6 +30,7 @@ verified directory for the current result. `latest` is a convenience link only:
 | `review-changes.csv` | New or changed review cases since the immediately preceding run; not the weekly backlog |
 | `decisions.csv` | Every row with its evidence, for audit |
 | `pulley-unmatched.csv` | Pulley projects nobody claimed |
+| `handoff.md` | Run-specific counts, provenance, usage and draft Account Lead response |
 | `summary.txt` | Counts, what changed since the previous run, the review list, status differences |
 | `run.json` | Provenance and decisions used for the next run’s quality gate and diff |
 | `output-manifest.json` | SHA-256 and byte length for every output |

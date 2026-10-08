@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parse as parseCsv } from "csv-parse/sync";
+import { z } from "zod";
 import { acmeState, isInScope, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
 import { matchSafetyIssue } from "../domain/match/safety.ts";
 import { createSafetyIndex, type SafetyIndex } from "../domain/match/safety-index.ts";
@@ -13,7 +14,7 @@ import { SchemaError } from "../errors.ts";
  * Human decisions that persist across runs.
  *
  * When Permit Ops resolves a `needs_review` row (or disagrees with a match),
- * they record it in `data/overrides.csv`:
+ * they record it in `overrides.csv` at the repository root:
  *
  *   acme_project_id,pulley_project_id,status,note
  *   3716.1005,prj_ae5zai,matched,confirmed with the lead 2026-10-09
@@ -97,20 +98,25 @@ export function parseOverrides(
   }
 
   const overrides: Override[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, Override>();
   rows.forEach((row, index) => {
     const parsed = parseOverrideRow(row, index + 2, source);
     if (typeof parsed === "string") {
       problems.push(parsed);
       return;
     }
-    if (seen.has(parsed.acmeId)) {
+    const previous = seen.get(parsed.acmeId);
+    if (previous) {
+      if (JSON.stringify(previous) !== JSON.stringify(parsed))
+        throw new SchemaError(
+          `${source} line ${index + 2}: conflicting duplicate override for ${parsed.acmeId}; resolve all decisions before syncing`,
+        );
       problems.push(
-        `${source} line ${index + 2}: duplicate acme_project_id ${parsed.acmeId}; first entry wins`,
+        `${source} line ${index + 2}: identical duplicate override for ${parsed.acmeId} collapsed`,
       );
       return;
     }
-    seen.add(parsed.acmeId);
+    seen.set(parsed.acmeId, parsed);
     overrides.push(parsed);
   });
   return { overrides, problems };
@@ -138,7 +144,7 @@ function parseOverrideRow(
   if (status === "no_match" && pulleyId) {
     return `${source} line ${line}: no_match must not carry a pulley_project_id`;
   }
-  if (decidedAt && !/^\d{4}-\d{2}-\d{2}(T[0-9:.]+Z?)?$/.test(decidedAt)) {
+  if (decidedAt && !z.union([z.iso.date(), z.iso.datetime()]).safeParse(decidedAt).success) {
     return `${source} line ${line}: decided_at "${decidedAt}" is not an ISO date`;
   }
   return {

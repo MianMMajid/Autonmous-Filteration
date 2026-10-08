@@ -56,7 +56,7 @@ import {
  * Bump when a rule, weight, or tier changes. Recorded in run.json so a
  * historical decision can be attributed to the rules that produced it.
  */
-export const RULES_VERSION = "2026-10-08.8";
+export const RULES_VERSION = "2026-10-08.9";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
@@ -645,7 +645,11 @@ function strongDecision(
   }
   const target = context.pulleyById.get(winner.pulleyId);
   const safety = target ? matchSafetyIssue(acme, target, context.safety, true) : null;
-  if (safety) return review(acme, candidates, tier, safety.reason, safety.note);
+  if (safety)
+    return {
+      ...review(acme, candidates, tier, safety.reason, safety.note),
+      reviewResolution: safety.resolution,
+    };
   return {
     ...base(acme, [winner, ...candidates.filter((c) => c !== winner)], tier),
     status: OutputStatus.Matched,

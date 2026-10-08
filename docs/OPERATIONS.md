@@ -120,7 +120,7 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `TYPE_MISMATCH` | The only project at the store is a different kind of work |
 | `STATUS_CONFLICT` | Canceled or closed on one side only |
 | `STATUS_UNKNOWN` | A status value the tool has never seen; it will not guess what it means |
-| `EVIDENCE_CONFLICT` | Source identity, year, milestones, or lifecycle evidence conflicts; correct the source before acceptance |
+| `EVIDENCE_CONFLICT` | Follow `recommended_action`: an explained override can resolve street/milestone discrepancies; identity, explicit program-year, scope and lifecycle conflicts require source correction |
 | `INSUFFICIENT_EVIDENCE` | No trustworthy permit-year evidence or no unique strong owner; verify independently |
 | `IDENTITY_DISPUTED` | Acme's own source rows for this project or its site contradict each other; it would have matched, but contradictory evidence never raises confidence |
 | `WEAK_EVIDENCE` | Same street name or same city only |
@@ -149,11 +149,14 @@ not change that fingerprint. The first run after upgrading old output records
 resurfaces their pending cases once because no comparison fingerprint exists.
 Removed projects are reported separately from resolved reviews.
 
-The initial 26-row backlog under rules 2026-10-08.8 on the October 8 archive needs an onboarding review;
-it is not a claim that the team will have 26 new cases every week. Actual weekly
+The initial 27-row backlog under rules 2026-10-08.9 on the October 8 archive needs an onboarding review;
+it is not a claim that the team will have 27 new cases every week. Actual weekly
 workload must be measured over fresh snapshots. Verified overrides retain prior
-decisions when evidence is still valid. Contradictory source facts require source
-correction; changing an override alone cannot waive the shared safety gate.
+decisions when evidence is still valid. Hard source contradictions require source
+correction; explained human decisions can resolve soft street/date discrepancies.
+Conflicting duplicate override rows stop publication; remove the conflict rather
+than choosing by CSV row order. Identical duplicates collapse with a warning.
+Decision dates, when supplied, must be real ISO dates or UTC timestamps.
 
 ## Status differences
 

@@ -100,6 +100,7 @@ describe("runSync end to end", () => {
     expect(outcome.runId).toBe("2026-10-08T10-00-00-000Z");
     expect((await readdir(outcome.outputDirectory)).sort()).toEqual([
       "decisions.csv",
+      "handoff.md",
       "mapping.csv",
       "output-manifest.json",
       "overrides.snapshot.csv",

@@ -53,7 +53,7 @@ export async function acquireLock(dataDir: string, options: LockOptions = {}): P
   const isAlive = options.isAlive ?? processIsAlive;
   const sleep = options.sleep ?? defaultSleep;
   const path = join(dataDir, LOCK_FILENAME);
-  await mkdir(dataDir, { recursive: true }).catch((error: unknown) => {
+  await mkdir(dataDir, { recursive: true, mode: 0o700 }).catch((error: unknown) => {
     throw new IoError(`Could not create ${dataDir}`, { cause: error });
   });
 

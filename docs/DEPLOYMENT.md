@@ -39,8 +39,8 @@ Before enabling unattended runs:
    `SYNC_ENABLED=true`. Until this variable is set, the scheduled job is disabled.
 
 The workflow reads persistent state, syncs, verifies the result, creates a verified
-backup, uploads the immutable output directory, and finally sends a success
-heartbeat. A failed sync/backup/upload sends no success heartbeat. The independent
+backup on the configured storage, and finally sends a success
+heartbeat. A failed sync or backup sends no success heartbeat. The independent
 service must alert when no heartbeat arrives, including when GitHub or the host
 never runs. An error after local publication can leave a valid new local result
 while the job fails; inspect `published-path` before retrying. Each retry produces
@@ -61,8 +61,8 @@ node --env-file-if-exists=.env src/cli.ts status --json --max-age-hours 24 --max
 
 Version 3 run records require output integrity verification. Their manifest hashes
 all emitted output files, including `run.json`, `overrides.snapshot.csv`, and
-the additive `review-changes.csv`. Older version 3 publications without the
-review delta remain readable. Status,
+the additive `review-changes.csv` and `handoff.md`. Older version 3 publications
+without these additive files remain readable. Status,
 subsequent sync and backups reject damaged version 3 outputs. Customer reports
 remain on the trusted host and approved backup volume; this workflow does not
 upload output CSVs or run records to GitHub artifacts.
@@ -75,8 +75,8 @@ Versions 1 and 2 remain readable for migration. Version 2 must contain its quali
 comparison fields; version 1 can derive its matched count from decisions. Legacy
 outputs lack the new artifact-integrity guarantee and cannot be exported by
 `published-path` or backed up until a supervised successful sync produces version 3.
-Matching rules are versioned separately; current rules 2026-10-08.6 add
-precision safeguards described in MATCHING.md. New review fingerprints are
+Matching rules are versioned separately; current rules 2026-10-08.9 add
+EV umbrella support and source-contradiction safeguards described in MATCHING.md. New review fingerprints are
 optional on historical records; their absence resurfaces pending cases once.
 
 Missing `latest.json` with existing completed outputs is an error, not a first run.
@@ -229,3 +229,8 @@ Removing the customer-data cache addresses eviction and access concerns:
 [GitHub caching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching).
 The staged rollout and recovery drills follow
 [Google SRE pipeline guidance](https://sre.google/workbook/data-processing/).
+
+New raw archives and state directories are created with owner-only access (0700);
+raw reports and manifests use 0600 and flushed writes. Existing directory modes
+are not changed automatically: verify permissions on the deployed volume. An
+existing partial output directory is preserved, never deleted and reused.
