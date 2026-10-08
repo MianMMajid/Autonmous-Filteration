@@ -95,6 +95,7 @@ data/
 ```
 
 `run.json` (format version 2) records the tool version, rules version,
+implementation SHA-256 (source files, package metadata, dependency lockfile),
 input counts and per-file SHA-256 hashes, the non-secret configuration, the
 input-quality assessment, the overrides file hash and the matcher's decision
 for every overridden row, and every decision with its evidence. The previous

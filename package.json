@@ -1,6 +1,6 @@
 {
   "name": "siteledger-sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Matches Acme SiteLedger projects to Pulley projects and emits a mapping CSV for Permit Ops.",
   "private": true,
   "type": "module",

@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import type { Config } from "../config.ts";
 import { matchProjects, RULES_VERSION } from "../domain/match/matcher.ts";
 import type { MatchReport } from "../domain/match/types.ts";
@@ -14,6 +13,7 @@ import {
 import { diffRuns, type RunDiff } from "../output/diff.ts";
 import { renderSummary } from "../output/summary.ts";
 import type { HttpClient } from "../sources/http.ts";
+import { implementationSha256, TOOL_VERSION } from "../version.ts";
 import { type AcquireOptions, acquireInputs } from "./acquire.ts";
 import { assertPublicationInvariants } from "./invariants.ts";
 import { acquireLock } from "./lock.ts";
@@ -36,12 +36,6 @@ import { assessInputQuality, type QualityAssessment } from "./quality.ts";
  * Publication is the commit point. Anything after it (retention) is
  * reported separately and never undoes a published result.
  */
-
-const TOOL_VERSION = (
-  JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
-    version: string;
-  }
-).version;
 
 export interface SyncOptions {
   readonly config: Config;
@@ -90,6 +84,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
   const now = options.now ?? (() => new Date());
   const lock = await acquireLock(config.dataDir);
   try {
+    const implementation = await implementationSha256();
     const acquireOptions: AcquireOptions = {
       config,
       log,
@@ -182,6 +177,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
         source: inputs.source,
         toolVersion: TOOL_VERSION,
         rulesVersion: RULES_VERSION,
+        implementationSha256: implementation,
         inputs: { archiveDirectory: inputs.archiveDirectory, files: inputs.archiveFiles, counts },
         config: {
           siteLedgerBaseUrl: config.siteLedger.baseUrl,
@@ -222,6 +218,13 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
 
     return { runId: inputs.runId, outputDirectory: written, summary, report, diff, quality };
   } finally {
-    await lock.release();
+    try {
+      await lock.release();
+    } catch (error) {
+      log.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        "lock cleanup failed; inspect the lock before the next run",
+      );
+    }
   }
 }

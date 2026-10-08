@@ -40,11 +40,17 @@ tie, because the brief says those names legitimately differ. Only hard evidence 
 acceptance tie set is computed from the best *decisive* score, not from the
 display ordering, so a soft bonus can never promote a weaker candidate.
 
-**Disputed identity.** A project whose Site Directory rows conflict, or
-whose register rows conflict, carries that dispute into matching and is
-never auto-matched: the row goes to review as `IDENTITY_DISPUTED` naming the
-project it would otherwise have matched. Contradictory source rows must
-never raise confidence.
+**Disputed identity.** Conflicting Site Directory, Project Register, or Key
+Dates rows, and a joined site whose current/former number disagrees with the
+project's store number, are held as `IDENTITY_DISPUTED`. This applies even
+when the provisional outcome is `no_match`; source order cannot remove the
+case from review. Contradictory site numbers are not borrowed as identities.
+Matched overrides must wait until the source dispute is resolved.
+
+Identical Pulley duplicate records collapse. Conflicting versions of a Pulley
+ID refuse the snapshot with `SchemaError` (exit 5), so lifecycle, plan, or
+organization cannot be selected by pagination order. Live and replay use the
+same validation.
 
 **Unknown scope.** Banner and state must both be known and equal for a
 candidate to be in scope. Two unknown organization labels are not evidence
@@ -170,7 +176,7 @@ compares its inputs and outcome with the previous successful run:
 | Any report or the Pulley list has zero rows | publication refused |
 | Any input or the matched count fell by more than half | publication refused |
 | Any input or the matched count fell by more than a fifth | reported in the summary |
-| Site Directory or Key Dates rows repeat a key with different content | those keys are set aside; projects that reference them are matched without that evidence and the summary says so |
+| Source rows repeat a key with different content | conflicting Site Directory/Key Dates joins are set aside and affected Acme projects go to review; conflicting Pulley versions refuse publication |
 | Rows repeat a key with identical content | collapsed to one, reported |
 
 A refused publication exits with code 8, names the condition, points at the

@@ -57,6 +57,8 @@ const DECISION_COLUMNS = [
 /** What a reviewer should do with a row, phrased for the person, derived from the reason. */
 export function recommendedAction(d: MatchDecision): string {
   switch (d.reason) {
+    case "IDENTITY_DISPUTED":
+      return "Resolve the conflicting source rows or site identity in SiteLedger, then rerun; a matched override cannot resolve disputed identity";
     case "AMBIGUOUS":
       return "Two or more Pulley projects fit equally; pick the real one (the other is likely a duplicate) and record it in overrides.csv";
     case "STATUS_CONFLICT":

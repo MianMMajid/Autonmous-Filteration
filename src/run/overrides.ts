@@ -254,7 +254,7 @@ function rejectConflictingOverrides(
   // Withdrawing an override restores a matcher decision that may itself join
   // another group, so iterate to a fixed point (bounded; each pass withdraws
   // at least one override or stops).
-  for (let pass = 0; pass < 10; pass++) {
+  for (let pass = 0; pass < overriddenIds.size; pass++) {
     const offending = conflictingOverrides(byAcme, keyOf, overriddenIds, rejected);
     if (offending.length === 0) break;
     for (const { decision, pulleyId, others } of offending) {
@@ -323,6 +323,7 @@ function targetProblem(
 
 /** Why a recorded match can no longer be applied as-is, or null when it still holds. */
 function reconfirmationNeeded(acme: AcmeProject, target: PulleyRecord): string | null {
+  if (acme.identityDisputed) return `${acme.identityDisputed}; resolve the source identity first`;
   if (!isInScope(acme, target)) {
     const state = acmeState(acme);
     return target.banner !== acme.banner

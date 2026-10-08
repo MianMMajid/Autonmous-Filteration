@@ -54,7 +54,7 @@ import {
  * Bump when a rule, weight, or tier changes. Recorded in run.json so a
  * historical decision can be attributed to the rules that produced it.
  */
-export const RULES_VERSION = "2026-10-08.4";
+export const RULES_VERSION = "2026-10-08.5";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
@@ -266,14 +266,14 @@ function memo(
 
 function decide(acme: AcmeProject, context: Context): MatchDecision {
   const decision = decideFromEvidence(acme, context);
-  if (acme.identityDisputed === null || decision.status !== OutputStatus.Matched) return decision;
+  if (acme.identityDisputed === null) return decision;
   // Contradictory source rows must never raise confidence: hold the row.
   return review(
     acme,
     decision.candidates,
     decision.tier ?? Tier.ExactId,
     ReasonCode.IdentityDisputed,
-    `${acme.identityDisputed}; would otherwise match ${decision.pulleyId}`,
+    `${acme.identityDisputed}; provisional outcome ${decision.status}${decision.pulleyId ? `; would otherwise match ${decision.pulleyId}` : ""}`,
   );
 }
 

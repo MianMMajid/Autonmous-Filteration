@@ -67,28 +67,24 @@ describe("RawArchive", () => {
     await newer.init();
     await newer.write("register.xls", "project-register", new Uint8Array([1, 2]));
     await newer.write("page-1.json", "pulley-page", "{}", 1);
-    await newer.write("../escape.json", "pulley-page", "{}", 2);
+    await expect(newer.write("../escape.json", "pulley-page", "{}", 2)).rejects.toThrow(/Unsafe/);
     const manifest = await newer.finalize(new Date("2026-10-08T12:00:00Z"));
 
-    expect(manifest.files.map((f) => f.name)).toEqual([
-      "register.xls",
-      "page-1.json",
-      ".._escape.json",
-    ]);
-    expect(manifest.files[0]).toMatchObject({
+    expect(manifest.files.map((f) => f.name)).toEqual(["page-1.json", "register.xls"]);
+    expect(manifest.files[1]).toMatchObject({
       name: "register.xls",
       kind: "project-register",
       bytes: 2,
     });
     expect(manifest.files[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(manifest.files[1]?.page).toBe(1);
+    expect(manifest.files[0]?.page).toBe(1);
 
     const written = JSON.parse(await readFile(join(newer.directory, "manifest.json"), "utf8"));
     expect(written.runId).toBe("2026-10-08T12-00-00Z");
 
     const loaded = await loadLatestArchive(dataDir);
     expect(loaded?.manifest.runId).toBe("2026-10-08T12-00-00Z");
-    const bytes = await loaded?.read(manifest.files[0] as NonNullable<(typeof manifest.files)[0]>);
+    const bytes = await loaded?.read(manifest.files[1] as NonNullable<(typeof manifest.files)[0]>);
     expect([...(bytes ?? [])]).toEqual([1, 2]);
   });
 

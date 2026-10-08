@@ -66,14 +66,16 @@ pnpm test
 - `overrides.csv` at the repo root (tracked) replaces matcher decisions with
   human ones; it is re-validated against banner, state, and the status gate on
   every run. `data/` is ignored and holds only run artifacts.
-- `run.json` is format version 2 with provenance (rules version, input
-  hashes, overrides hash). Bump `RULES_VERSION` in `matcher.ts` when a rule
+- `run.json` is format version 2 with provenance (rules version, implementation
+  content hash, input hashes, overrides hash). Bump `RULES_VERSION` in `matcher.ts` when a rule
   or weight changes.
 - Run ids include milliseconds and run directories are created exclusively;
   never add code that deletes or reuses an existing run directory.
-- The lock is created with `link` and stale locks are claimed with `rename`,
-  so recovery cannot delete a live owner's lock. Keep that protocol if you
-  touch `src/run/lock.ts`.
+- Lock records are published by atomic hard links. Dead main-lock owners are
+  reclaimed under a non-expiring recovery mutex. Never steal that mutex by
+  age: suspended owners can resume. An abandoned `.lock.reclaim` requires
+  stopping all sync processes and verifying none can resume before removal.
+  Filesystems without hard-link support fail closed. Release checks owner tokens.
 - `src/run/invariants.ts` is the publication boundary; every path that can
   change a decision (matcher, assignment pass, overrides) is checked there.
   Add new hard rules to it, not only to the path that first needs them.

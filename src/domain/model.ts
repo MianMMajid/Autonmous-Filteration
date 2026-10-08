@@ -86,8 +86,8 @@ export interface AcmeProject {
   readonly dates: AcmeDates | null;
   /**
    * Why this project's identity cannot be trusted automatically: conflicting
-   * Site Directory rows for its site, or conflicting register rows for its
-   * id. A disputed project is never auto-matched; it goes to review.
+   * Site Directory/Key Dates/register rows, or a site/store identity mismatch.
+   * A disputed project always goes to review, even with no candidate.
    */
   readonly identityDisputed: string | null;
 }
