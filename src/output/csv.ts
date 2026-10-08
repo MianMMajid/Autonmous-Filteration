@@ -57,6 +57,10 @@ const DECISION_COLUMNS = [
 /** What a reviewer should do with a row, phrased for the person, derived from the reason. */
 export function recommendedAction(d: MatchDecision): string {
   switch (d.reason) {
+    case "EVIDENCE_CONFLICT":
+      return "Verify the conflicting identity, year, dates, or lifecycle evidence and correct the source before matching; an override cannot bypass this conflict";
+    case "INSUFFICIENT_EVIDENCE":
+      return "Confirm the permit's building and program year using independent evidence; correct the source or record a verified human decision in overrides.csv";
     case "IDENTITY_DISPUTED":
       return "Resolve the conflicting source rows or site identity in SiteLedger, then rerun; a matched override cannot resolve disputed identity";
     case "AMBIGUOUS":

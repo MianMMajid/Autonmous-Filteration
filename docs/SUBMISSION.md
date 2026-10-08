@@ -2,77 +2,57 @@
 
 ## 1. Mapping CSV
 
-`data/out/latest/mapping.csv` from the most recent run (produced by
-`pnpm sync`; columns `acme_pcroject_id,pulley_project_id,status`, one row per
-Acme project, 400 rows on the 2026-10-08 dataset).
+Run `pnpm sync` for fresh upstream data, or `pnpm sync --dry-run` to replay
+archived inputs. Resolve the verified immutable output with
+`pnpm cli published-path`; submit its `mapping.csv` and `review.csv`.
+The CSV uses exactly `acme_pcroject_id,pulley_project_id,status`.
 
-## 2a. Estimated match percentage
+## 2a. Match coverage and correctness
 
-**About 81% of Acme projects are correctly matched** to a Pulley project,
-and about 94% of all rows carry the right outcome.
+Rules 2026-10-08.6 produce **309 matches, 41 review rows, and 50 no-matches**
+on the 400-row 2026-10-08 archive. Automatic coverage is **77.25%**. Twenty-three
+previously accepted rows now require verification because evidence conflicts
+or does not establish the permit's year.
 
-Basis, from `docs/VALIDATION.md`: the tool reports 332 of 400 rows as
-`matched` (83%); that is coverage, not correctness. A hand-checked stratified sample across every matching tier
-plus a sweep of every matched row with two or more soft concerns puts the
-precision of those rows at roughly 96%, so about 320 are right. The 50
-`no_match` rows are mostly correct outcomes: 21 have nothing in Pulley that
-relates, 24 only relate to another year's permit or another line at the same
-store, and 5 are referenced only by pathfinder projects, which the brief
-excludes. The 18 `needs_review` rows are real questions (duplicate Pulley
-projects with no dates, canceled on one side only, two ids filed under the
-wrong banner, three lines competing for one permit across years), not
-matcher weakness.
+**Correctness has not been independently measured.** Earlier estimates of
+96% precision, 81% correctly matched projects, and 94% correct outcomes were
+not supported by adjudicated labels and must not be used as release claims.
+A correct no-match is a valid outcome; review is an abstention, not proof of
+correctness. Follow `docs/adjudication/README.md` before reporting measured
+precision, with label coverage and sample sizes. No 100% accuracy guarantee
+is implied by the automated tests.
 
-## 2b. Message to the Account Lead
+## 2b. Draft message to the Account Lead — not sent
 
-> Hi! Thanks for the detailed notes, they shaped most of this.
+> Hi! I've built the SiteLedger-to-Pulley matching tool. One command downloads
+> the reports and Pulley projects, archives the inputs, and writes the mapping
+> CSV plus explanations and candidates for rows needing review.
 >
-> I've built a small tool that does the Monday line-up automatically. One
-> command, `pnpm sync`, signs in to SiteLedger, pulls the Project Register,
-> Site Directory and Key Dates, pulls our projects from the Pulley API, and
-> writes the mapping CSV in the format you need. It takes a few seconds, so
-> it can run as often as the data changes; I've included a schedule that runs
-> it three times a day on weekdays, and it can also be run by hand.
+> On the archived October 8 dataset, the current rules accept 309 of 400 rows,
+> hold 41 for review, and return no match for 50. These are coverage counts;
+> we still need independent checks to establish correctness. The matcher now
+> holds conflicting IDs, years, dates, addresses, and lifecycle evidence for
+> review rather than treating a high score as sufficient proof.
 >
-> Where things stand on today's data: of Acme's 400 projects, 332 are
-> matched to a Pulley project, 50 have no match (mostly projects Pulley hasn't
-> opened, or lines that fold into a different year's permit), and 18 need a
-> human look. Every row carries a reason, so the review file tells you *why*
-> it's asking: the 18 today are things like two Pulley projects for the same
-> store and type with no dates, a project that's canceled on our side but
-> still active on Acme's, or an Acme id that someone filed under Warehouse
-> Club instead of Market. It also lists the 33 matched projects where our
-> status and theirs disagree, which I suspect is the list your team actually
-> wants on a Monday. My estimate is that around 81% of Acme's projects
-> are correctly matched, and about 94% of rows have the right answer overall.
+> Pathfinder and signage are excluded. Market and Warehouse Club identities
+> stay separate, cancellation must agree, and shared permits cannot span
+> buildings or program years. Verified human decisions can supply missing
+> evidence; conflicting source facts must be corrected before a match is
+> accepted. Overrides are checked again on each run.
 >
-> The rules you gave me are all in there: store.sequence is only trusted as a
-> whole, Warehouse Club and Market numbers never mix, state and street beat
-> city, several Acme lines can point at one of our permits when it's the same
-> store and year, signage stays separate, Pathfinder is skipped, and canceled
-> only counts when it's canceled or closed on both sides. Two things the data
-> taught me that you didn't mention: our project dates track Acme's key dates
-> very closely, which turned out to be the best tie-breaker after the id
-> itself, and a few stores have been renumbered, which the tool handles
-> through the Site Directory's former location number.
+> Scheduling, verified outputs, backups, and monitoring support are included;
+> live scheduled operation still requires deployment setup and verification.
+> The 41-row initial review backlog should be resolved before agreeing on an
+> acceptable ongoing weekly review workload.
 >
-> To keep the weekly check small, once your team settles a review row they
-> can record it in a one-line overrides file and it won't come back.
->
-> Could we find 30 minutes this week to get you set up? I'd like to walk
-> through the summary it prints, run it live on the current data, and hear
-> whether the review reasons make sense to your team before you rely on it.
->
-> Thanks again!
+> Could we schedule 30 minutes to review the disputed cases, run the tool on
+> updated data, and agree on the independent validation needed before relying
+> on automatic matches?
 
-## What was built, in one paragraph
+## What was built
 
-A TypeScript command-line tool (Node 26, strict TypeScript 7, 184 tests)
-with five parts: acquisition (SiteLedger sign-in and report download, Pulley
-API pagination, every byte archived for replay), normalization (a name
-parser covering all 116 observed name shapes, a street normalizer, joins
-to the Site Directory and Key Dates), a deterministic five-tier matcher with
-evidence scoring and stable reason codes, outputs (mapping CSV, review and
-audit CSVs, a summary with a diff against the previous run), and operations
-(single-run lock, atomic output directories, overrides file, scheduled
-workflow). Design decisions and the full matching rules are in `docs/`.
+A TypeScript CLI with archived acquisition, normalized identities and addresses,
+a deterministic six-tier candidate matcher with a shared acceptance safety gate,
+review and audit outputs, validated overrides, publication invariants, independent
+label evaluation, and deployment/backup/monitoring support. See `MATCHING.md`,
+`VALIDATION.md`, and `DEPLOYMENT.md` for behavior and remaining release work.

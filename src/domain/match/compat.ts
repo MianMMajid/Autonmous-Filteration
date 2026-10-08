@@ -136,14 +136,34 @@ function daysBetween(a: string | null | undefined, b: string | null | undefined)
  * Acme Key Dates with small jitter.
  */
 export function dateProximityDays(acme: AcmeProject, pulley: PulleyRecord): number | null {
-  const d = acme.dates;
-  if (!d) return null;
-  const gaps = [
-    daysBetween(d.constructionStart, pulley.constructionStart),
-    daysBetween(d.permitSubmittedActual ?? d.permitSubmittedProjected, pulley.permitSubmitted),
-    daysBetween(d.permitApproved, pulley.permitApproved),
-  ].filter((gap): gap is number => gap !== null);
+  const gaps = milestoneGaps(acme, pulley).map((gap) => gap.days);
   return gaps.length === 0 ? null : Math.min(...gaps);
+}
+
+/** Preserve all comparisons so a close milestone cannot hide a contradiction. */
+export function milestoneGaps(
+  acme: AcmeProject,
+  pulley: PulleyRecord,
+): readonly {
+  milestone: string;
+  days: number;
+}[] {
+  const d = acme.dates;
+  if (!d) return [];
+  return [
+    {
+      milestone: "construction start",
+      days: daysBetween(d.constructionStart, pulley.constructionStart),
+    },
+    {
+      milestone: "permit submitted",
+      days: daysBetween(
+        d.permitSubmittedActual ?? d.permitSubmittedProjected,
+        pulley.permitSubmitted,
+      ),
+    },
+    { milestone: "permit approved", days: daysBetween(d.permitApproved, pulley.permitApproved) },
+  ].flatMap(({ milestone, days }) => (days === null ? [] : [{ milestone, days }]));
 }
 
 export const Temporal = {

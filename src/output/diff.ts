@@ -9,6 +9,7 @@ export interface PreviousDecision {
   readonly acmeId: string;
   readonly status: OutputStatus;
   readonly pulleyId: string | null;
+  readonly reviewFingerprint?: string;
 }
 
 export interface DecisionChange {

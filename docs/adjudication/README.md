@@ -1,7 +1,7 @@
 # Adjudicated expected mappings
 
-The accuracy figures in `docs/VALIDATION.md` and `docs/SUBMISSION.md` rest on
-a hand check by the author. They are not a measured precision. This folder
+Earlier accuracy estimates have been withdrawn from submission claims because
+they were not independently measured. This folder
 is where an adjudicated reference set lives once Permit Ops has reviewed
 rows with knowledge of the real projects.
 

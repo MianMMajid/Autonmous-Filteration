@@ -4,6 +4,39 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Synthetic edge-case audit — rules 2026-10-08.7
+
+- Reproduced and fixed seven new unsafe acceptances: stripped bracket signage
+  and year evidence, extra named buildings absent from the register, building
+  designators removed from addresses, street-name words treated as directions,
+  future years treated as store numbers, and conflicting Acme name/year facts.
+- Add deterministic mutation tests: 1,152 invalid scenarios and 96 valid controls,
+  each in both input orders, plus direct override/publication bypass checks.
+- Preserve verified former-store aliases and valid building spelling variants.
+  Test results do not imply perfect accuracy on unadjudicated real data.
+
+### Recurring review workflow
+
+- Add a hashed `review-changes.csv` output for new or changed review evidence
+  since the previous run; retain the entire backlog in `review.csv`.
+- Persist stable evidence fingerprints in run records; legacy baselines surface
+  existing review rows once. Separate removed projects from resolved reviews.
+- Explain initial versus ongoing review workload and the deployment activation
+  boundary. No accuracy or weekly workload guarantee is implied.
+
+### Precision safeguards — rules 2026-10-08.6
+
+- Withhold conflicting identity/year/milestone/marker evidence across matching,
+  overrides, and publication. Missing temporal evidence requires review unless
+  a trusted full ID establishes the site/year.
+- Preserve explicit owners even when their provisional match is withheld;
+  reject conflicting address/date ownership and unresolved store-number reuse.
+- Remove score-based assignment across buildings/years without a strong anchor.
+- Replay moves 23 prior acceptances to review: 309 matched, 41 review, 50 no match.
+  Regression cases cover the six audit counterexamples and bypass attempts.
+- Withdraw unmeasured accuracy estimates. No 100% accuracy claim; independent
+  adjudication and holdout evaluation remain required.
+
 ### Added and fixed — 0.2.0 (matching rules unchanged)
 
 - Fail closed on damaged history, use verified immutable output paths in automated

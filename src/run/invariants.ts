@@ -1,4 +1,5 @@
 import { isInScope, statusesAgree } from "../domain/match/compat.ts";
+import { matchSafetyIssue } from "../domain/match/safety.ts";
 import type { MatchDecision } from "../domain/match/types.ts";
 import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
 import { ExitCode, SyncError } from "../errors.ts";
@@ -75,6 +76,8 @@ function targetsAreValid(
       out.push(`${d.acmeId} is matched to ${target.id} against the status gate`);
     }
     if (a.identityDisputed) out.push(`${d.acmeId} is matched while its identity is disputed`);
+    const safety = matchSafetyIssue(a, target, acme, d.reason !== "OVERRIDE");
+    if (safety) out.push(`${d.acmeId} is matched despite ${safety.reason}: ${safety.note}`);
   }
   return out;
 }

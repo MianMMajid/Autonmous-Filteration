@@ -3,6 +3,7 @@ import type { NormalizedInputs } from "../domain/model.ts";
 import type { AcquiredInputs } from "../run/acquire.ts";
 import type { QualityAssessment } from "../run/quality.ts";
 import type { PreviousDecision, RunDiff } from "./diff.ts";
+import { reviewWorkload } from "./review.ts";
 
 /**
  * Human-readable run summary. This is what Permit Ops reads first, so it
@@ -90,17 +91,16 @@ function workloadSection(
   previous: readonly PreviousDecision[] | null,
 ): string[] {
   if (!previous) return [];
-  const before = new Set(previous.filter((d) => d.status === "needs_review").map((d) => d.acmeId));
-  const now = new Set(
-    report.decisions.filter((d) => d.status === "needs_review").map((d) => d.acmeId),
-  );
-  const fresh = [...now].filter((id) => !before.has(id));
-  const resolved = [...before].filter((id) => !now.has(id));
-  const pending = [...now].filter((id) => before.has(id));
+  const workload = reviewWorkload(previous, report.decisions);
+  const fresh = workload.fresh.map((d) => d.acmeId);
+  const { resolved, removed, changed, unchanged } = workload;
   return [
-    `Review workload: ${fresh.length} new, ${resolved.length} resolved since the previous run, ${pending.length} still pending from before`,
+    `Review workload: ${fresh.length} new, ${resolved.length} resolved since the previous run, ${changed.length + unchanged.length} still pending from before`,
+    `Review evidence: ${changed.length} changed or lacking a comparison baseline, ${unchanged.length} unchanged; ${removed.length} removed from the register (not resolved)`,
+    "  review-changes.csv contains new/changed cases since the previous run; review.csv retains the entire backlog",
     ...(fresh.length > 0 ? [`  new: ${fresh.slice(0, MAX_LISTED).join(", ")}`] : []),
     ...(resolved.length > 0 ? [`  resolved: ${resolved.slice(0, MAX_LISTED).join(", ")}`] : []),
+    ...(removed.length > 0 ? [`  removed: ${removed.slice(0, MAX_LISTED).join(", ")}`] : []),
   ];
 }
 
@@ -189,6 +189,7 @@ function filesSection(outputDirectory: string): string[] {
     `Files in ${outputDirectory}:`,
     "  mapping.csv           the deliverable (acme_pcroject_id,pulley_project_id,status)",
     "  review.csv            needs_review rows with reasons and candidates",
+    "  review-changes.csv    new or changed review cases since the previous run",
     "  decisions.csv         every row with evidence, for audit",
     "  pulley-unmatched.csv  Pulley projects nobody claimed",
     "  run.json              machine-readable record used for the next run's diff",

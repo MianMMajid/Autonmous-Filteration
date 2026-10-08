@@ -96,8 +96,9 @@ const PLACEHOLDERS: ReadonlySet<string> = new Set([
 
 /** Unit designators and the token that follows them are not part of the street. */
 const UNIT_PATTERN =
-  /\b(?:SUITE|STE|UNIT|APT|APARTMENT|BLDG|BUILDING|FLOOR|FL|ROOM|RM|SPACE|SPC|DEPT)\b\.?\s*#?\s*[A-Z0-9-]+/g;
+  /\b(?:SUITE|STE|UNIT|APT|APARTMENT|FLOOR|FL|ROOM|RM|SPACE|SPC|DEPT)\b\.?\s*#?\s*[A-Z0-9-]+/g;
 const HASH_UNIT_PATTERN = /#\s*[A-Z0-9-]+/g;
+const BUILDING_PATTERN = /\b(?:BLDG|BUILDING)\b\.?\s*#?\s*([A-Z0-9-]+)/g;
 
 /**
  * Build a comparison key for a street address, or null when there is nothing
@@ -105,7 +106,11 @@ const HASH_UNIT_PATTERN = /#\s*[A-Z0-9-]+/g;
  */
 export function normalizeStreet(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
-  let text = dropVenuePrefix(raw.toUpperCase());
+  const upper = raw.toUpperCase();
+  // Buildings sharing a street address are not interchangeable. Preserve
+  // designators even when they precede a comma and the house number.
+  const buildings = [...new Set([...upper.matchAll(BUILDING_PATTERN)].map((m) => m[1]))].sort();
+  let text = dropVenuePrefix(upper).replace(BUILDING_PATTERN, " ");
   text = text.replace(UNIT_PATTERN, " ").replace(HASH_UNIT_PATTERN, " ");
   text = text
     .replace(/[.,;:()'"]/g, " ")
@@ -114,12 +119,33 @@ export function normalizeStreet(raw: string | null | undefined): string | null {
   if (text === "") return null;
 
   if (PLACEHOLDERS.has(text)) return null;
-  const tokens = text.split(" ").map((token) => DIRECTIONALS[token] ?? SUFFIXES[token] ?? token);
+  const tokens = normalizeTokens(text.split(" "));
   const merged = mergeDirectionals(tokens);
   // A usable key has a house number followed by at least one street token;
   // "Main St" or "N/A" must never compare equal to anything.
   if (merged.length < 2 || !HOUSE_NUMBER.test(merged[0] ?? "")) return null;
-  return merged.join(" ");
+  return [...merged, ...buildings.flatMap((building) => ["BLDG", building])].join(" ");
+}
+
+/** Normalize positions, not words inside a street's proper name. In
+ * "100 North Street", North is the entire name, not a directional prefix.
+ */
+function normalizeTokens(tokens: string[]): string[] {
+  const last = tokens.length - 1;
+  const trailingDirection = tokens.length >= 4 && DIRECTIONALS[tokens[last] ?? ""] !== undefined;
+  const suffix = trailingDirection ? last - 1 : last;
+  const word = tokens[suffix] ?? "";
+  tokens[suffix] = SUFFIXES[word] ?? word;
+  if (trailingDirection) tokens[last] = DIRECTIONALS[tokens[last] ?? ""] ?? "";
+  if (suffix > 2) tokens[1] = DIRECTIONALS[tokens[1] ?? ""] ?? tokens[1] ?? "";
+  if (
+    suffix > 3 &&
+    (tokens[1] === "N" || tokens[1] === "S") &&
+    ["E", "W", "EAST", "WEST"].includes(tokens[2] ?? "")
+  ) {
+    tokens[2] = DIRECTIONALS[tokens[2] ?? ""] ?? "";
+  }
+  return tokens;
 }
 
 /**

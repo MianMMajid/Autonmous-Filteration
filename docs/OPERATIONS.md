@@ -119,6 +119,8 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `TYPE_MISMATCH` | The only project at the store is a different kind of work |
 | `STATUS_CONFLICT` | Canceled or closed on one side only |
 | `STATUS_UNKNOWN` | A status value the tool has never seen; it will not guess what it means |
+| `EVIDENCE_CONFLICT` | Source identity, year, milestones, or lifecycle evidence conflicts; correct the source before acceptance |
+| `INSUFFICIENT_EVIDENCE` | No trustworthy permit-year evidence or no unique strong owner; verify independently |
 | `IDENTITY_DISPUTED` | Acme's own source rows for this project or its site contradict each other; it would have matched, but contradictory evidence never raises confidence |
 | `WEAK_EVIDENCE` | Same street name or same city only |
 | `UNRELATED_ONLY` | Projects at the store exist but are another line or another year |
@@ -130,6 +132,27 @@ Reason codes in `review.csv` and `decisions.csv`:
 milestone dates) and for each candidate its city, street, dates, a plain
 reading of the evidence, and the score. Review rows also carry a
 `recommended_action` that says what to do.
+
+## Keeping recurring review manageable
+
+`review.csv` is the **entire unresolved backlog**. Use it for the Monday review.
+`review-changes.csv` contains only new cases and cases whose evidence changed
+since the immediately preceding successful run. It is useful when watching
+several runs per day, but **must not be used alone for weekly review**: a case
+added on Tuesday remains in the full backlog even if Monday's delta is empty.
+No unresolved case is silently dropped to meet a review quota.
+
+Candidate identity, status, address, dates, evidence, reason, and review notes
+are compared using a stable fingerprint. Candidate/object ordering alone does
+not change that fingerprint. The first run after upgrading old output records
+resurfaces their pending cases once because no comparison fingerprint exists.
+Removed projects are reported separately from resolved reviews.
+
+The initial 41-row backlog on the October 8 archive needs an onboarding review;
+it is not a claim that the team will have 41 new cases every week. Actual weekly
+workload must be measured over fresh snapshots. Verified overrides retain prior
+decisions when evidence is still valid. Contradictory source facts require source
+correction; changing an override alone cannot waive the shared safety gate.
 
 ## Status differences
 
@@ -151,7 +174,7 @@ Logs are quiet by default; set `LOG_LEVEL=info` in `.env` to see each step.
 
 Once a review row is settled, add it to `overrides.csv` at the repository
 root (tracked in version control, so every decision has an author, a date,
-and a history) so it does not come back next run:
+and a history) so it is retained when the source evidence still permits it:
 
 ```
 acme_project_id,pulley_project_id,status,note,author,decided_at
@@ -167,7 +190,8 @@ file on a shared drive instead.
 tool validates every line and lists any it cannot apply in the summary, for
 example a Pulley id that is pathfinder. A recorded match is re-checked on
 every run against the rules that no human decision can waive: same banner,
-same state, and the canceled-on-both-sides rule. If the upstream facts have
+same state, compatible work, the canceled-on-both-sides rule, and the shared
+identity/year/milestone safety gate. If the upstream facts have
 changed since the decision was recorded, the summary says the override needs
 reconfirmation and the matcher's own decision is used until the line is
 updated. Overrides also beat the matcher on

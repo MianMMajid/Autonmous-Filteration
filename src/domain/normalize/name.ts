@@ -57,13 +57,17 @@ const TRAILING_PAREN_SEQUENCE = /\((\d{4})\)\s*$/;
 const FOUR_DIGITS = /\b(\d{4})\b/g;
 const STORE_MARKER_BEFORE =
   /(?:#|\bSTORE\b|\bCLUB\b|\bAM-|\bACME\b(?:\s+(?:WC|MKT|MARKET|WAREHOUSE CLUB))?\s*\|?|\|)\s*#?\s*$/;
-const YEAR_MIN = 2024;
-const YEAR_MAX = 2035;
+// Same supported program-year range as the register schema. Bare numbers
+// in this range are ambiguous years, never proof of a building identity.
+const YEAR_MIN = 2000;
+const YEAR_MAX = 2100;
 const CITY_STATE = /([A-Za-z][A-Za-z .'-]*?),\s*([A-Z]{2})\b/g;
 
 export function parseProjectName(raw: string): ParsedName {
   const { text, markers, canceledMarker } = stripDecorations(raw);
-  const upper = text.toUpperCase();
+  // Decorations may contain real identity/exclusion evidence. Keep them in
+  // extraction even though the cleaned display text omits bracket prefixes.
+  const upper = [...markers, text].join(" ").toUpperCase();
   const facts = new Facts();
 
   extractFullIds(upper, facts);
