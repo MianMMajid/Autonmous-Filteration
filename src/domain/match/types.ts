@@ -15,7 +15,8 @@ export const Tier = {
   Store: 2,
   Sequence: 3,
   Address: 4,
-  Locality: 5,
+  Dates: 5,
+  Locality: 6,
 } as const;
 export type Tier = (typeof Tier)[keyof typeof Tier];
 
@@ -32,6 +33,8 @@ export const ReasonCode = {
   SequenceLocality: "SEQUENCE_LOCALITY",
   /** No usable number in the Pulley name; exact street match narrowed to one candidate. */
   Address: "ADDRESS",
+  /** No usable number or street, but milestone dates within a week in the same city identify one Acme project uniquely. */
+  DateLocality: "DATE_LOCALITY",
   /** More than one candidate survived the deciding tier. */
   Ambiguous: "AMBIGUOUS",
   /** The only candidate has an incompatible project type. */
@@ -73,6 +76,10 @@ export type YearSignal = (typeof YearSignal)[keyof typeof YearSignal];
 export interface Evidence {
   readonly exactId: boolean;
   readonly storeMatch: boolean;
+  /** Smallest gap in days between corresponding milestone dates; null when none overlap. */
+  readonly proximityDays: number | null;
+  /** Combined year-and-date verdict; see `compat.ts`. */
+  readonly temporal: "same" | "near" | "unknown" | "conflict";
   readonly typeCompatible: boolean;
   readonly typeEqual: boolean;
   readonly year: YearSignal;

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  dateProximityDays,
   sequenceRelation,
   statusesAgree,
   storeContradicts,
   storeMatches,
+  Temporal,
+  temporalVerdict,
   typesCompatible,
   yearSignal,
 } from "../../../src/domain/match/compat.ts";
@@ -64,6 +67,37 @@ describe("sequenceRelation and store matching", () => {
     expect(storeMatches(a, pulley({ name: "#9999 Reno, NV" }))).toBe(false);
     expect(storeContradicts(a, pulley({ name: "#9999 Reno, NV" }))).toBe(true);
     expect(storeContradicts(a, pulley({ name: "Acme Market - Reno, NV" }))).toBe(false);
+  });
+});
+
+describe("dateProximityDays and temporalVerdict", () => {
+  const a = acme({
+    programYear: 2027,
+    dates: { constructionStart: "2027-09-12", permitSubmittedActual: "2027-06-20" },
+  });
+  it("takes the smallest gap across milestone pairs", () => {
+    expect(
+      dateProximityDays(
+        a,
+        pulley({ constructionStart: "2027-09-15", permitSubmitted: "2027-01-01" }),
+      ),
+    ).toBe(3);
+    expect(dateProximityDays(a, pulley({}))).toBeNull();
+    expect(dateProximityDays(acme({}), pulley({ constructionStart: "2027-09-15" }))).toBeNull();
+  });
+  it("classifies same, near, unknown, and conflict", () => {
+    expect(temporalVerdict(a, pulley({ constructionStart: "2027-09-15" }))).toBe(Temporal.Same);
+    expect(temporalVerdict(a, pulley({ name: "X-NV-SUP-RM-2027" }))).toBe(Temporal.Same);
+    expect(temporalVerdict(a, pulley({ constructionStart: "2027-02-01" }))).toBe(Temporal.Near);
+    expect(temporalVerdict(a, pulley({ constructionStart: "2028-01-05" }))).toBe(Temporal.Near);
+    expect(temporalVerdict(a, pulley({}))).toBe(Temporal.Unknown);
+    expect(temporalVerdict(a, pulley({ constructionStart: "2029-09-12" }))).toBe(Temporal.Conflict);
+    expect(
+      temporalVerdict(a, pulley({ name: "Remodel 2029", constructionStart: "2027-09-12" })),
+    ).toBe(Temporal.Conflict);
+    expect(
+      temporalVerdict(acme({ programYear: 2027 }), pulley({ constructionStart: "2029-09-12" })),
+    ).toBe(Temporal.Conflict);
   });
 });
 

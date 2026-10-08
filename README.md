@@ -67,5 +67,6 @@ Zod, commander, pino, SheetJS (vendored), csv-parse/csv-stringify.
 
 Phases 0 to 4 complete: toolchain, docs, acquisition with raw archiving and
 offline replay, normalization, matching, and outputs with run-to-run diffs.
-Remaining: hand-validation of a sample and the submission notes. See
+Phase 5 validation is in `docs/VALIDATION.md`. Remaining: scheduling and
+submission notes. See
 `CHANGELOG.md`.

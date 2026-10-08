@@ -23,6 +23,7 @@ interface AcmeOverrides {
   formerLocationNumber?: number | null;
   name?: string;
   site?: null;
+  dates?: Partial<NonNullable<AcmeProject["dates"]>>;
 }
 
 export function acme(overrides: AcmeOverrides = {}): AcmeProject {
@@ -60,7 +61,16 @@ export function acme(overrides: AcmeOverrides = {}): AcmeProject {
     status: overrides.status ?? "Active",
     banner: overrides.banner ?? Banner.Market,
     site: overrides.site === null ? null : site,
-    dates: null,
+    dates: overrides.dates
+      ? {
+          designStart: null,
+          permitSubmittedProjected: null,
+          permitSubmittedActual: null,
+          permitApproved: null,
+          constructionStart: null,
+          ...overrides.dates,
+        }
+      : null,
   };
 }
 
@@ -114,6 +124,12 @@ export function pulley(overrides: PulleyOverrides = {}): PulleyRecord {
 export function inputs(acmeList: AcmeProject[], pulleyList: PulleyRecord[]) {
   const sites = acmeList.flatMap((a) => (a.site ? [a.site] : []));
   const sitesByLocation = new Map<number, AcmeSite[]>();
-  for (const site of sites) sitesByLocation.set(site.locationNumber, [site]);
+  const add = (key: number, site: AcmeSite): void => {
+    sitesByLocation.set(key, [...(sitesByLocation.get(key) ?? []), site]);
+  };
+  for (const site of sites) {
+    add(site.locationNumber, site);
+    if (site.formerLocationNumber !== null) add(site.formerLocationNumber, site);
+  }
   return { acme: acmeList, sites, sitesByLocation, pulley: pulleyList, warnings: [] };
 }

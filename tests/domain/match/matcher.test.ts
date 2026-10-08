@@ -154,6 +154,93 @@ describe("matchProjects: tier 2, store plus type and year", () => {
     expect(d.status).toBe("no_match");
   });
 
+  it("does not fold an Acme line into another year's permit at the same store", () => {
+    const d = one(
+      { programYear: 2029, projectType: "Remodel", dates: { constructionStart: "2029-10-21" } },
+      [
+        pulley({
+          id: "prj_2027",
+          name: "AM-1556 Reno NV",
+          projectType: "Remodel",
+          constructionStart: "2027-09-12",
+        }),
+      ],
+    );
+    expect(d).toMatchObject({ status: "no_match", reason: ReasonCode.UnrelatedOnly });
+    expect(d.note).toMatch(/other years/);
+    expect(d.candidates[0]?.pulleyId).toBe("prj_2027");
+  });
+
+  it("tolerates a year-boundary slip when the dates are close", () => {
+    const d = one({ programYear: 2027, dates: { constructionStart: "2027-12-28" } }, [
+      pulley({ id: "prj_slip", name: "#1556 Reno, NV", constructionStart: "2028-01-06" }),
+    ]);
+    expect(d).toMatchObject({ status: "matched", pulleyId: "prj_slip" });
+  });
+
+  it("lets exact dates decide between two same-store projects", () => {
+    const d = one(
+      {
+        projectType: "Remodel",
+        programYear: 2027,
+        dates: { constructionStart: "2027-09-12", permitSubmittedActual: "2027-06-20" },
+      },
+      [
+        pulley({
+          id: "prj_far",
+          name: "#1556 Reno, NV",
+          projectType: "Remodel",
+          constructionStart: "2027-02-01",
+        }),
+        pulley({
+          id: "prj_exact",
+          name: "Acme 1556 - Reno, NV",
+          projectType: "Remodel",
+          constructionStart: "2027-09-12",
+          permitSubmitted: "2027-06-20",
+        }),
+      ],
+    );
+    expect(d).toMatchObject({ status: "matched", pulleyId: "prj_exact" });
+  });
+
+  it("requires locality when a store number identifies two buildings", () => {
+    // Store 4980 is Lowell's current number and Worcester's former number.
+    const lowell = acme({
+      store: 4980,
+      sequence: 1001,
+      city: "Lowell",
+      state: "MA",
+      projectType: "Coffee Tenant",
+    });
+    const worcester = acme({
+      store: 1912,
+      sequence: 1003,
+      city: "Worcester",
+      state: "MA",
+      formerLocationNumber: 4980,
+      projectType: "New Build",
+    });
+    const report = matchProjects(
+      inputs(
+        [lowell, worcester],
+        [
+          pulley({
+            id: "prj_worc",
+            name: "Acme | 4980, WORCESTER, MA",
+            jurisdictionCity: "Worcester",
+            state: "MA",
+            projectType: "New Build",
+          }),
+        ],
+      ),
+    );
+    expect(report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual([
+      ["4980.1001", "no_match", null],
+      ["1912.1003", "matched", "prj_worc"],
+    ]);
+  });
+
   it("treats a different-sequence, different-type candidate as another line, not a review item", () => {
     const d = one({ sequence: 1000, projectType: "Coffee Tenant" }, [
       pulley({ id: "prj_ev", name: "Acme | 1556.1001 TAMPA, FL", projectType: "EV Charging" }),
@@ -289,6 +376,53 @@ describe("matchProjects: tier 3 and 4, address and weak evidence", () => {
   });
 });
 
+describe("matchProjects: tier 5, dates plus locality", () => {
+  it("matches a nameless project whose dates sit within a week of the Key Dates", () => {
+    const d = one(
+      {
+        programYear: 2026,
+        dates: { constructionStart: "2026-10-28", permitSubmittedActual: "2026-06-09" },
+      },
+      [
+        pulley({
+          id: "prj_dates",
+          name: "Project Larkspur",
+          jurisdictionCity: "Reno",
+          constructionStart: "2026-10-30",
+          permitSubmitted: "2026-06-11",
+        }),
+      ],
+    );
+    expect(d).toMatchObject({
+      status: "matched",
+      pulleyId: "prj_dates",
+      reason: ReasonCode.DateLocality,
+      tier: Tier.Dates,
+    });
+  });
+
+  it("refuses when two Acme projects in the city share the dates", () => {
+    const dates = { constructionStart: "2026-10-28" };
+    const report = matchProjects(
+      inputs(
+        [
+          acme({ store: 1111, sequence: 1001, dates }),
+          acme({ store: 2222, sequence: 1001, dates }),
+        ],
+        [
+          pulley({
+            id: "prj_dates",
+            name: "Project Larkspur",
+            jurisdictionCity: "Reno",
+            constructionStart: "2026-10-29",
+          }),
+        ],
+      ),
+    );
+    for (const d of report.decisions) expect(d.status).not.toBe("matched");
+  });
+});
+
 describe("matchProjects: status gate", () => {
   it("passes closed vs canceled, blocks closed vs live and live vs canceled", () => {
     expect(
@@ -345,7 +479,7 @@ describe("matchProjects on the real dataset", () => {
   });
 
   it("matches most rows and keeps review manageable", () => {
-    expect(report.counts.matched).toBeGreaterThanOrEqual(340);
+    expect(report.counts.matched).toBeGreaterThanOrEqual(320);
     expect(report.counts.needs_review).toBeLessThanOrEqual(30);
     expect(report.counts.matched + report.counts.needs_review + report.counts.no_match).toBe(400);
   });
