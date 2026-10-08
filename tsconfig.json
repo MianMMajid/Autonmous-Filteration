@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // --- Runtime alignment: Node 26 runs .ts directly via type stripping. ---
+    // Node ignores tsconfig at runtime, so these flags make tsc reject anything
+    // Node could not execute (enums, parameter properties, decorators).
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "esnext",
+    "lib": ["esnext"],
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+
+    // --- Strictness beyond TypeScript 7's default `strict: true`. ---
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+    "noUncheckedSideEffectImports": true,
+
+    // --- Project shape. TS 7 defaults `types` to [] and `rootDir` to `./`. ---
+    "rootDir": ".",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+}

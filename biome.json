@@ -1,0 +1,83 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": ["**", "!**/dist", "!**/data", "!**/vendor", "!**/coverage"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "project": "recommended"
+    },
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUndeclaredVariables": "error",
+        "useImportExtensions": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noConsole": {
+          "level": "error",
+          "options": {
+            "allow": ["error"]
+          }
+        }
+      },
+      "style": {
+        "noNonNullAssertion": "error",
+        "useConst": "error",
+        "useNodejsImportProtocol": "error",
+        "noParameterAssign": "error"
+      },
+      "complexity": {
+        "useLiteralKeys": "off",
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": {
+            "maxAllowedComplexity": 20
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/cli.ts", "src/preflight.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
+}
