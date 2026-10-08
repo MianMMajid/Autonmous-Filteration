@@ -15,6 +15,7 @@ export interface SummaryInput {
   readonly normalized: NormalizedInputs;
   readonly report: MatchReport;
   readonly diff: RunDiff;
+  readonly overrides: { readonly applied: number; readonly problems: readonly string[] };
   readonly outputDirectory: string;
 }
 
@@ -25,6 +26,7 @@ export function renderSummary(s: SummaryInput): string {
     headerSection(s),
     changesSection(s.diff),
     reviewSection(s.report),
+    overridesSection(s.overrides),
     warningsSection(s),
     pulleySideSection(s.report),
     filesSection(s.outputDirectory),
@@ -92,6 +94,15 @@ function reviewSection(report: MatchReport): string[] {
   if (review.length > MAX_LISTED)
     lines.push(`  ... ${review.length - MAX_LISTED} more in review.csv`);
   return lines;
+}
+
+function overridesSection(o: SummaryInput["overrides"]): string[] {
+  if (o.applied === 0 && o.problems.length === 0) return [];
+  return [
+    `Overrides: ${o.applied} applied from data/overrides.csv` +
+      (o.problems.length > 0 ? `, ${o.problems.length} could not be applied:` : ""),
+    ...o.problems.map((problem) => `  ${problem}`),
+  ];
 }
 
 function warningsSection(s: SummaryInput): string[] {

@@ -49,6 +49,8 @@ export const ReasonCode = {
   UnrelatedOnly: "UNRELATED_ONLY",
   /** The only project carrying this id or store is pathfinder or signage, which the brief excludes. */
   ExcludedOnly: "EXCLUDED_ONLY",
+  /** A human decision recorded in overrides.csv replaced the matcher's decision. */
+  Override: "OVERRIDE",
 } as const;
 export type ReasonCode = (typeof ReasonCode)[keyof typeof ReasonCode];
 

@@ -49,6 +49,16 @@ The `status` column is one of `matched`, `needs_review`, or `no_match`.
 
 A failed run never overwrites the previous good output.
 
+**Settling a review row.** Once your team decides, add one line to
+`data/overrides.csv` and it will not come back:
+
+```
+acme_project_id,pulley_project_id,status,note
+3716.1005,prj_ae5zai,matched,confirmed with the lead 2026-10-09
+```
+
+More in `docs/OPERATIONS.md`, including how to run it on a schedule.
+
 ## For engineers
 
 See `AGENTS.md` for setup and gates, `docs/ARCHITECTURE.md` for the data
@@ -67,6 +77,6 @@ Zod, commander, pino, SheetJS (vendored), csv-parse/csv-stringify.
 
 Phases 0 to 4 complete: toolchain, docs, acquisition with raw archiving and
 offline replay, normalization, matching, and outputs with run-to-run diffs.
-Phase 5 validation is in `docs/VALIDATION.md`. Remaining: scheduling and
-submission notes. See
+All six phases complete. Validation is in `docs/VALIDATION.md`, operations
+in `docs/OPERATIONS.md`, and the submission notes in `docs/SUBMISSION.md`. See
 `CHANGELOG.md`.

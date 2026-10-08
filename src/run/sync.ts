@@ -21,6 +21,7 @@ import {
   updateLatest,
   writeOutputs,
 } from "./outputs.ts";
+import { applyOverrides, loadOverrides } from "./overrides.ts";
 
 /**
  * The whole run, in order: lock, acquire, normalize, match, diff against the
@@ -69,8 +70,17 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     const normalized = normalizeInputs(inputs);
     for (const warning of normalized.warnings) log.warn(warning);
 
-    const report = matchProjects(normalized);
-    log.info({ ...report.counts, reasons: report.reasons }, "matching complete");
+    const matched = matchProjects(normalized);
+    log.info({ ...matched.counts, reasons: matched.reasons }, "matching complete");
+
+    const overrides = applyOverrides(
+      matched,
+      await loadOverrides(config.dataDir),
+      normalized.pulley,
+    );
+    for (const problem of overrides.problems) log.warn(problem);
+    if (overrides.applied > 0) log.info({ applied: overrides.applied }, "overrides applied");
+    const report = overrides.report;
 
     const previous = await loadPreviousRun(config.dataDir);
     const diff = diffRuns(previous, report.decisions);
@@ -83,6 +93,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
       normalized,
       report,
       diff,
+      overrides: { applied: overrides.applied, problems: overrides.problems },
       outputDirectory,
     });
 

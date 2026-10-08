@@ -44,6 +44,7 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/run/acquire.ts` | live fetch or archive replay, parse, drift report | done |
 | `src/run/lock.ts` | single-run lock with stale-owner reclaim | done |
 | `src/run/outputs.ts` | atomic output directory, latest pointer, run record | done |
+| `src/run/overrides.ts` | human decisions from overrides.csv, validated and applied | done |
 | `src/run/sync.ts` | the whole run in order | done |
 
 Dependency direction is one way: `cli -> run -> (sources | domain | output)`.
@@ -84,6 +85,7 @@ data/
   out/latest.json          { "runId": ... } of the last successful run
   out/latest -> <run-id>   convenience symlink where the filesystem allows it
   .lock                    present while a run is active; holds the owner pid
+  overrides.csv            optional human decisions, applied after matching
 ```
 
 `run.json` of the previous successful run feeds the diff in the next

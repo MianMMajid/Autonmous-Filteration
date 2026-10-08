@@ -1,0 +1,64 @@
+name: Scheduled sync
+
+# Runs three times on weekdays (13:00, 17:00, 21:00 UTC) and on demand.
+# Requires repository secrets: SITELEDGER_USERNAME, SITELEDGER_PASSWORD, PULLEY_API_KEY.
+# The data directory is cached between runs so summary.txt can report what changed.
+
+on:
+  schedule:
+    - cron: "0 13,17,21 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: siteledger-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore previous outputs (for the run-to-run diff)
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: sync-data-${{ github.run_id }}
+          restore-keys: sync-data-
+
+      - name: Sync
+        env:
+          SITELEDGER_USERNAME: ${{ secrets.SITELEDGER_USERNAME }}
+          SITELEDGER_PASSWORD: ${{ secrets.SITELEDGER_PASSWORD }}
+          PULLEY_API_KEY: ${{ secrets.PULLEY_API_KEY }}
+          LOG_LEVEL: warn
+        run: pnpm sync
+
+      - name: Save outputs for the next run
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: sync-data-${{ github.run_id }}
+
+      - name: Publish outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteledger-sync-${{ github.run_id }}
+          path: data/out/latest/
+          retention-days: 30
+          if-no-files-found: ignore
