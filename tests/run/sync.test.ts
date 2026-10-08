@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { chmod, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -142,6 +142,23 @@ describe("runSync end to end", () => {
     expect(fetch.calls.length).toBe(calls);
     expect(replay.summary).toMatch(/replayed archive/);
     expect(replay.diff.changes).toEqual([]);
+  });
+
+  it("applies overrides and reports the ones it cannot apply", async () => {
+    const first = await run(upstreams(), "2026-10-08T10:00:00Z");
+    const review = first.report.decisions.find((d) => d.status === "needs_review");
+    const target = review?.candidates[0]?.pulleyId;
+    if (!review || !target) throw new Error("expected a review row with a candidate");
+    await writeFile(
+      join(dataDir, "overrides.csv"),
+      `acme_project_id,pulley_project_id,status,note\n${review.acmeId},${target},matched,settled\n9999.1000,,no_match,unknown id\n`,
+    );
+    const second = await run(upstreams(), "2026-10-08T11:00:00Z");
+    const decision = second.report.decisions.find((d) => d.acmeId === review.acmeId);
+    expect(decision).toMatchObject({ status: "matched", pulleyId: target, reason: "OVERRIDE" });
+    expect(second.summary).toMatch(/Overrides: 1 applied/);
+    expect(second.summary).toMatch(/9999\.1000 ignored: not in the Project Register/);
+    expect(second.diff.changes.find((c) => c.acmeId === review.acmeId)?.kind).toBe("newly_matched");
   });
 
   it("refuses to run while another sync holds the lock, and leaves latest alone", async () => {

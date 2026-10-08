@@ -61,6 +61,8 @@ pnpm test
   common key names as a backstop only.
 - The Key Dates CSV mixes `MM/DD/YYYY` and `YYYY-MM-DD` in the same column.
   `reportDateSchema` accepts both on purpose; do not narrow it.
+- `data/overrides.csv` (optional) replaces matcher decisions with human ones
+  and is validated on every run; see `docs/OPERATIONS.md`.
 - Ties in the matcher go to `needs_review`, never to a guess. See `docs/adr/0004`.
 - `docs/brief/` is gitignored because the original PDF contains live credentials.
 
@@ -72,4 +74,7 @@ pnpm test
 | Matching tiers, reason codes | `docs/MATCHING.md` |
 | Data flow, modules, exit codes | `docs/ARCHITECTURE.md` |
 | Why a tool or rule was chosen | `docs/adr/` |
+| Running on a schedule, reading results, overrides | `docs/OPERATIONS.md` |
+| Hand check and match-rate estimate | `docs/VALIDATION.md` |
+| What to submit and the message to the lead | `docs/SUBMISSION.md` |
 | What changed | `CHANGELOG.md` |
