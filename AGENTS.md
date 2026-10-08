@@ -26,8 +26,9 @@ Credentials come from the person who handed you this repo. Never commit `.env`.
 ## Run
 
 ```sh
-pnpm sync               # full run; outputs under data/out/<timestamp>/ and data/out/latest/
+pnpm sync               # full run; prints the summary; outputs under data/out/<timestamp>/
 pnpm sync --dry-run     # re-match the last archived inputs, no network
+pnpm sync --quiet       # no summary on stdout (logs still go to stdout as JSON)
 pnpm cli --help
 ```
 

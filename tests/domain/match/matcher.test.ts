@@ -350,8 +350,19 @@ describe("matchProjects on the real dataset", () => {
     expect(report.counts.matched + report.counts.needs_review + report.counts.no_match).toBe(400);
   });
 
-  it("reports the 9 Pulley ids that are not in the register", () => {
-    expect(report.pulleyIdsNotInRegister).toHaveLength(9);
+  it("reports Pulley ids that are not in the register, ignoring renumbered-store aliases", () => {
+    // An alias is former.sequence for a register row whose site was renumbered.
+    const aliases = new Set(
+      normalized.acme
+        .filter((a) => a.site?.formerLocationNumber != null)
+        .map((a) => `${a.site?.formerLocationNumber}.${a.sequence}`),
+    );
+    expect(aliases.size).toBeGreaterThan(0);
+    for (const { acmeId } of report.pulleyIdsNotInRegister) {
+      expect(aliases.has(acmeId), `${acmeId} is a renumbered-store alias`).toBe(false);
+    }
+    expect(report.pulleyIdsNotInRegister.length).toBeGreaterThan(0);
+    expect(report.pulleyIdsNotInRegister.length).toBeLessThan(9);
   });
 
   it("every matched row satisfies the status gate and type compatibility", () => {

@@ -20,13 +20,19 @@ lines them up by hand every Monday. One command, run as often as you like.
 pnpm sync
 ```
 
-Outputs land in `data/out/latest/`:
+Outputs land in `data/out/latest/` (every run also keeps its own
+`data/out/<timestamp>/` folder):
 
 | File | What it is |
 |---|---|
-| `mapping.csv` | One row per Acme project: `acme_pcroject_id,pulley_project_id,status` |
-| `review.csv` | Every `needs_review` row with the reason and the top candidates |
-| `summary.txt` | Counts per status, and what changed since the previous run |
+| `mapping.csv` | The deliverable. One row per Acme project: `acme_pcroject_id,pulley_project_id,status` |
+| `review.csv` | Only the `needs_review` rows, with the reason, a note, and the top candidates |
+| `decisions.csv` | Every row with its evidence, for audit |
+| `pulley-unmatched.csv` | Pulley projects nobody claimed |
+| `summary.txt` | Counts, what changed since the previous run, the review list |
+| `run.json` | Machine-readable record used for the next run's diff |
+
+The summary is also printed to the terminal at the end of each run.
 
 The `status` column is one of `matched`, `needs_review`, or `no_match`.
 
@@ -59,6 +65,7 @@ Zod, commander, pino, SheetJS (vendored), csv-parse/csv-stringify.
 
 ## Project status
 
-Phases 0 and 1 complete: toolchain, docs, and acquisition from both systems
-with raw archiving and offline replay. Normalization and matching are next.
-See `CHANGELOG.md`.
+Phases 0 to 4 complete: toolchain, docs, acquisition with raw archiving and
+offline replay, normalization, matching, and outputs with run-to-run diffs.
+Remaining: hand-validation of a sample and the submission notes. See
+`CHANGELOG.md`.

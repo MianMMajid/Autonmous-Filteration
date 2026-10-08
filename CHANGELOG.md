@@ -6,6 +6,13 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Phase 4 outputs: `mapping.csv` with the exact required columns,
+  `review.csv`, `decisions.csv` with evidence, `pulley-unmatched.csv`,
+  `summary.txt` with a diff against the previous run, and `run.json`.
+  Outputs are written to a partial directory and renamed atomically;
+  `latest.json` moves only on success. Single-run lock with stale-owner
+  reclaim. `pnpm sync` now runs the whole pipeline and prints the summary.
+
 - Phase 3 matcher: deterministic five-tier matching (exact id, store,
   sequence plus locality, exact address, weak evidence) with evidence
   scoring, type compatibility for umbrella permits, former-location-number

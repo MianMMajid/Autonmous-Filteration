@@ -43,7 +43,7 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
     .filter((p) => !p.isPathfinder && !p.isSignage)
     .sort((a, b) => a.id.localeCompare(b.id));
   const excluded = inputs.pulley.filter((p) => p.isPathfinder || p.isSignage);
-  const registerIds = new Set(inputs.acme.map((a) => a.id));
+  const registerIds = knownAcmeIds(inputs.acme);
   const context: Context = { pool, excluded, acme: inputs.acme };
 
   const decisions = inputs.acme.map((acme) => decide(acme, context));
@@ -69,6 +69,21 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
   }
 
   return { decisions, unmatchedPulley, pulleyIdsNotInRegister, counts, reasons };
+}
+
+/**
+ * Register ids plus their renumbered-store aliases: a Pulley name citing
+ * `6414.1004` is not "unknown" when store 6414 is the former number of a
+ * site whose register row is now `NEW.1004`.
+ */
+function knownAcmeIds(register: readonly AcmeProject[]): Set<string> {
+  const ids = new Set<string>();
+  for (const acme of register) {
+    ids.add(acme.id);
+    const former = acme.site?.formerLocationNumber;
+    if (former !== null && former !== undefined) ids.add(`${former}.${acme.sequence}`);
+  }
+  return ids;
 }
 
 interface Context {
