@@ -4,13 +4,17 @@ import type { Logger } from "../logger.ts";
 /**
  * Thin wrapper over `fetch` that turns transport problems into typed errors.
  *
+ * The whole exchange, headers *and* body, happens inside the retry loop: a
+ * connection that drops while the body streams is a transport failure and is
+ * retried like any other, instead of surfacing as a parse error later.
+ *
  * Policy:
- * - 2xx: returned to the caller.
+ * - 2xx: returned to the caller with the body already read.
  * - 401 / 403: `AuthError` immediately. Retrying bad credentials is pointless.
  * - 404: `SchemaError`. The endpoint we rely on has moved; that is a contract change.
- * - 408 / 425 / 429 / 5xx and thrown network errors (including timeouts):
- *   retried with exponential backoff and jitter, honoring `Retry-After`,
- *   then `NetworkError`.
+ * - 408 / 425 / 429 / 5xx and thrown network errors (including timeouts and
+ *   body-read failures): retried with exponential backoff and jitter,
+ *   honoring `Retry-After`, then `NetworkError`.
  * - Any other status: `NetworkError` without retry.
  *
  * Error messages include the upstream JSON `message` when one is present, so
@@ -23,7 +27,7 @@ export interface HttpClientOptions {
   readonly fetch?: FetchLike;
   /** Number of retries after the first attempt. Default 3. */
   readonly retries?: number;
-  /** Per-attempt timeout. Default 30 s. */
+  /** Per-attempt timeout, covering headers and body. Default 30 s. */
   readonly timeoutMs?: number;
   readonly baseDelayMs?: number;
   readonly maxDelayMs?: number;
@@ -37,8 +41,17 @@ export interface RequestContext {
   readonly what: string;
 }
 
+/** A completed exchange: status, headers, and the full body. */
+export interface HttpResult {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly headers: Headers;
+  readonly bytes: Uint8Array;
+  text(): string;
+}
+
 type Attempt =
-  | { readonly kind: "response"; readonly response: Response }
+  | { readonly kind: "response"; readonly result: HttpResult }
   | { readonly kind: "failure"; readonly error: unknown };
 
 const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -62,7 +75,7 @@ export class HttpClient {
     this.#log = options.log;
   }
 
-  async request(url: string, init: RequestInit, context: RequestContext): Promise<Response> {
+  async request(url: string, init: RequestInit, context: RequestContext): Promise<HttpResult> {
     const details = { system: context.system, url: redactQuery(url) };
     for (let attempt = 0; ; attempt++) {
       const isLastAttempt = attempt >= this.#retries;
@@ -80,23 +93,37 @@ export class HttpClient {
         continue;
       }
 
-      const { response } = outcome;
-      if (response.ok) return response;
-      if (RETRYABLE_STATUSES.has(response.status) && !isLastAttempt) {
-        await this.#backoff(attempt, retryAfterMs(response), context, `HTTP ${response.status}`);
+      const { result } = outcome;
+      if (result.ok) return result;
+      if (RETRYABLE_STATUSES.has(result.status) && !isLastAttempt) {
+        await this.#backoff(
+          attempt,
+          retryAfterMs(result.headers),
+          context,
+          `HTTP ${result.status}`,
+        );
         continue;
       }
-      throw await statusError(response, context, attempt, details);
+      throw statusError(result, context, attempt, details);
     }
   }
 
+  /** One exchange including the body; any throw along the way is a transport failure. */
   async #attempt(url: string, init: RequestInit): Promise<Attempt> {
     try {
       const response = await this.#fetch(url, {
         ...init,
         signal: AbortSignal.timeout(this.#timeoutMs),
       });
-      return { kind: "response", response };
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const result: HttpResult = {
+        ok: response.ok,
+        status: response.status,
+        headers: response.headers,
+        bytes,
+        text: () => new TextDecoder("utf-8").decode(bytes),
+      };
+      return { kind: "response", result };
     } catch (error) {
       return { kind: "failure", error };
     }
@@ -122,14 +149,14 @@ export class HttpClient {
 // ---------- Helpers ----------
 
 /** Build the typed error for a non-2xx response that will not be retried. */
-async function statusError(
-  response: Response,
+function statusError(
+  result: HttpResult,
   context: RequestContext,
   attempt: number,
   details: Readonly<Record<string, unknown>>,
-): Promise<SyncError> {
-  const status = response.status;
-  const reason = await upstreamMessage(response);
+): SyncError {
+  const status = result.status;
+  const reason = upstreamMessage(result.text());
   const suffix = reason ? `: ${reason}` : "";
   const errorDetails = { ...details, status };
 
@@ -160,8 +187,8 @@ function describeFailure(error: unknown): string {
   return String(error);
 }
 
-function retryAfterMs(response: Response): number | undefined {
-  const header = response.headers.get("retry-after");
+function retryAfterMs(headers: Headers): number | undefined {
+  const header = headers.get("retry-after");
   if (!header) return undefined;
   const seconds = Number(header);
   if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
@@ -174,13 +201,8 @@ function retryAfterMs(response: Response): number | undefined {
  * Best-effort human-readable reason from an error response body.
  * Prefers a JSON `message` field, falls back to a short text snippet.
  */
-async function upstreamMessage(response: Response): Promise<string | undefined> {
-  let text: string;
-  try {
-    text = (await response.text()).trim();
-  } catch {
-    return undefined;
-  }
+function upstreamMessage(raw: string): string | undefined {
+  const text = raw.trim();
   if (!text) return undefined;
   try {
     const parsed: unknown = JSON.parse(text);

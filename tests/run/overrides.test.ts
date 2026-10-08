@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { matchProjects } from "../../src/domain/match/matcher.ts";
+import { Banner } from "../../src/domain/model.ts";
 import { SchemaError } from "../../src/errors.ts";
 import { applyOverrides, loadOverrides, parseOverrides } from "../../src/run/overrides.ts";
 import { acme, inputs, pulley } from "../domain/match/fixtures.ts";
@@ -76,7 +77,7 @@ describe("applyOverrides", () => {
     const loaded = parseOverrides(
       `${HEADER}1556.1002,prj_a,matched,confirmed by lead\n1556.1003,,no_match,\n`,
     );
-    const result = applyOverrides(report, loaded, pool);
+    const result = applyOverrides(report, loaded, { acme: register, pulley: pool });
     expect(result.applied).toBe(2);
     expect(result.problems).toEqual([]);
     expect(result.report.decisions.map((d) => [d.status, d.pulleyId, d.reason])).toEqual([
@@ -89,11 +90,32 @@ describe("applyOverrides", () => {
     expect(result.report.unmatchedPulley.map((p) => p.id)).toEqual(["prj_b"]);
   });
 
+  it("asks for reconfirmation when upstream facts no longer allow the recorded match", () => {
+    const canceled = [
+      pulley({ id: "prj_a", name: "#1556 Reno, NV", status: "Canceled" }),
+      pulley({ id: "prj_b", name: "Acme 1556 - Reno, NV" }),
+      pulley({ id: "prj_wc", name: "1556.1003 - Reno, NV", banner: Banner.WarehouseClub }),
+    ];
+    const current = matchProjects(inputs(register, canceled));
+    const loaded = parseOverrides(
+      `${HEADER}1556.1002,prj_a,matched,confirmed last week\n1556.1003,prj_wc,matched,typo\n`,
+    );
+    const result = applyOverrides(current, loaded, { acme: register, pulley: canceled });
+    expect(result.applied).toBe(0);
+    expect(result.problems[0]).toMatch(
+      /1556\.1002 needs reconfirmation: Acme is now Active and prj_a is Canceled/,
+    );
+    expect(result.problems[1]).toMatch(
+      /1556\.1003 needs reconfirmation: prj_wc is Acme Warehouse Club/,
+    );
+    expect(result.report.decisions).toEqual(current.decisions);
+  });
+
   it("refuses unknown ids and excluded targets, with reasons", () => {
     const loaded = parseOverrides(
       `${HEADER}9999.1000,prj_a,matched,\n1556.1002,prj_zzz,matched,\n1556.1003,prj_path,matched,\n`,
     );
-    const result = applyOverrides(report, loaded, pool);
+    const result = applyOverrides(report, loaded, { acme: register, pulley: pool });
     expect(result.applied).toBe(0);
     expect(result.problems).toHaveLength(3);
     expect(result.problems[0]).toMatch(/not in the Project Register/);

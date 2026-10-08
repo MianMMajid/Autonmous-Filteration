@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   dateProximityDays,
+  StatusVerdict,
   sequenceRelation,
   statusDrift,
   statusesAgree,
+  statusVerdict,
   storeContradicts,
   storeMatches,
   Temporal,
@@ -114,6 +116,17 @@ describe("statusDrift and status synonyms", () => {
     expect(statusesAgree("Completed", "Closed")).toBe(true);
     expect(statusesAgree("Active", "Cancelled")).toBe(false);
     expect(statusesAgree("Closed", "Done")).toBe(true);
+  });
+});
+
+describe("statusVerdict", () => {
+  it("classifies agree, conflict, and unknown", () => {
+    expect(statusVerdict("Active", "In Progress")).toBe(StatusVerdict.Agree);
+    expect(statusVerdict("Closed", "Complete")).toBe(StatusVerdict.Agree);
+    expect(statusVerdict("Active", "Canceled")).toBe(StatusVerdict.Conflict);
+    expect(statusVerdict("Canceled", "In Progress")).toBe(StatusVerdict.Conflict);
+    expect(statusVerdict("Active", "Archived")).toBe(StatusVerdict.Unknown);
+    expect(statusVerdict("Paused", "In Progress")).toBe(StatusVerdict.Unknown);
   });
 });
 

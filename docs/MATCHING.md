@@ -40,11 +40,11 @@ same store and the same year.
 
 | Tier | Candidate rule | Reason code on match |
 |---|---|---|
-| 1 | Acme `store.sequence` appears verbatim in the Pulley name | `EXACT_ID` |
+| 1 | Acme `store.sequence` appears verbatim in the Pulley name. When that store number also identifies a second building (a former number reused as a current one), the locality must agree too | `EXACT_ID` |
 | 2 | Acme store number, or the site's former location number, appears in the Pulley name. A number that identifies two buildings (one site's former number is another's current number) also needs city or street agreement | `STORE_TYPE_YEAR` |
 | 3 | Pulley name has no store but carries this sequence, sits in this city, and across the whole register exactly one Acme project with a compatible type and no temporal conflict fits it | `SEQUENCE_LOCALITY` |
-| 4 | Pulley name has no store; normalized street equals the Acme site street; sequence does not contradict | `ADDRESS` |
-| 5 | Pulley name has no store or full id; a milestone date lands within 7 days of the Acme Key Date; same city; compatible type; and exactly one Acme project in the register fits it | `DATE_LOCALITY` |
+| 4 | Pulley name has no store; normalized street (house number plus street, never a bare street name or placeholder) equals the Acme site street; sequence does not contradict; when two sites share the street key the city must agree | `ADDRESS` |
+| 5 | Pulley name has no store or full id; a milestone date lands within 7 days of the Acme Key Date; same city; compatible type; no temporal conflict; and exactly one Acme project in the same banner and state fits it | `DATE_LOCALITY` |
 | 6 | Weak evidence only: same street name with a different house number, or same city plus compatible type | never matches; `WEAK_EVIDENCE` review |
 
 If tiers 1 to 5 yield nothing, two checks run before tier 6. The exact Acme
@@ -54,13 +54,14 @@ the project. Otherwise, if store-identified projects exist in other years,
 the result is `no_match` with reason `UNRELATED_ONLY` and those projects
 listed, in preference to a tier 6 guess.
 
-**Year-conflict pass.** After every project is decided, any Pulley project
-claimed by Acme lines from different program years (possible when the
-project has no dates to conflict with) keeps the claims with strong
-evidence, an exact id or dates within a week, and sends the others to
-`needs_review` (`YEAR_CONFLICT`). With no strong claim, the best-scored
-claim's year is kept. When both claims are strong, for example an exact id
-on one line and exact dates on another, both stay matched.
+**Assignment pass.** After every project is decided, any Pulley project
+claimed by Acme lines from different sites or program years (possible when
+the project has no dates to conflict with) is resolved across the register.
+The full id written in the name pins the project to that line's year and
+anchors the group; failing that, claims with dates within a week anchor it;
+failing that, the best-scored claim. Every other site-and-year claim goes to
+`needs_review` (`YEAR_CONFLICT`). A test enforces that no Pulley project is
+ever assigned to two sites or two years.
 
 **Shared street keys.** When two sites share a normalized street key, an
 address-tier match there also needs city agreement. Street name alone (the
@@ -126,6 +127,7 @@ dates.
 | Best candidate has incompatible type, and every candidate has a different sequence | `no_match` (`UNRELATED_ONLY`, other line) |
 | Best candidate has incompatible type otherwise | `needs_review` (`TYPE_MISMATCH`) |
 | Best candidate fails the status gate | `needs_review` (`STATUS_CONFLICT`) |
+| A status on either side has no known lifecycle meaning | `needs_review` (`STATUS_UNKNOWN`) |
 | Only store-identified projects in other years | `no_match` (`UNRELATED_ONLY`, other year) |
 | Exact id found only on the other banner or state | `needs_review` (`ID_OUTSIDE_SCOPE`) |
 | Same Pulley project claimed from another program year without strong evidence | `needs_review` (`YEAR_CONFLICT`) |
@@ -144,8 +146,11 @@ Applied to the winning candidate of tiers 1 to 3.
 | Active or Deferred | Canceled | needs_review (`STATUS_CONFLICT`) |
 | Active or Deferred | anything else | matched |
 
-Brief: canceled only counts when canceled or closed on both sides. Spelling
-variants (Cancelled, Completed, Closed, Done) are accepted on both sides.
+Brief: canceled only counts when canceled or closed on both sides. Every
+status value is classified explicitly as active, complete, or canceled
+(spelling variants such as Cancelled, Completed, Closed, Done included). A
+value outside those lists is `unknown`, and unknown never produces a
+confident match; the row goes to review as `STATUS_UNKNOWN`.
 
 **Status drift.** Differences the gate permits but the two systems may want
 to reconcile (Pulley Complete while Acme is Active or Deferred; Acme
@@ -186,8 +191,8 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 334 (tier 1: 97, tier 2: 199, tier 3: 16, tier 4: 14, tier 5: 8) |
-| needs_review | 16 (4 ambiguous, 4 status conflict, 3 type mismatch, 2 year conflict, 2 id outside scope, 1 weak) |
+| matched | 333 (tier 1: 97, tier 2: 198, tier 3: 16, tier 4: 14, tier 5: 8) |
+| needs_review | 17 (4 ambiguous, 4 status conflict, 3 type mismatch, 3 year conflict, 2 id outside scope, 1 weak) |
 | no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
 | status differences on matched rows | 33 (reported, not an outcome) |
 

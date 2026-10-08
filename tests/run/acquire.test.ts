@@ -76,7 +76,7 @@ describe("acquireInputs", () => {
     const inputs = await acquireInputs({ config: config(), log, dryRun: false, http, now });
 
     expect(inputs.source).toBe("live");
-    expect(inputs.runId).toBe("2026-10-08T15-00-00Z");
+    expect(inputs.runId).toBe("2026-10-08T15-00-00-000Z");
     expect(inputs.acme.projects).toHaveLength(400);
     expect(inputs.acme.sites).toHaveLength(363);
     expect(inputs.acme.keyDates).toHaveLength(400);

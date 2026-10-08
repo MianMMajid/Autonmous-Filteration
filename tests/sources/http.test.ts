@@ -62,6 +62,28 @@ describe("HttpClient", () => {
     expect(mock.calls).toHaveLength(1);
   });
 
+  it("retries when the body fails to stream after a 200, then gives up as NetworkError", async () => {
+    const broken = () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.error(new TypeError("terminated"));
+          },
+        }),
+        { status: 200 },
+      );
+    const recovers = client([broken(), json({ ok: true })], 2);
+    const result = await recovers.http.request("https://x.test/a", {}, ctx);
+    expect(result.text()).toBe('{"ok":true}');
+    expect(recovers.mock.calls).toHaveLength(2);
+
+    const exhausted = client([broken(), broken(), broken()], 2);
+    await expect(exhausted.http.request("https://x.test/a", {}, ctx)).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+    expect(exhausted.mock.calls).toHaveLength(3);
+  });
+
   it("surfaces the upstream message for auth and non-retryable failures", async () => {
     const auth = client([
       json(

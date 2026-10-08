@@ -39,6 +39,7 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `ID_OUTSIDE_SCOPE` | The Acme id is on a project filed under the other banner or state; likely a data-entry error in Pulley |
 | `TYPE_MISMATCH` | The only project at the store is a different kind of work |
 | `STATUS_CONFLICT` | Canceled or closed on one side only |
+| `STATUS_UNKNOWN` | A status value the tool has never seen; it will not guess what it means |
 | `WEAK_EVIDENCE` | Same street name or same city only |
 | `UNRELATED_ONLY` | Projects at the store exist but are another line or another year |
 | `EXCLUDED_ONLY` | Only a pathfinder or signage project references it |
@@ -74,7 +75,12 @@ acme_project_id,pulley_project_id,status,note
 
 `status` is `matched` (with a Pulley id) or `no_match` (without one). The
 tool validates every line and lists any it cannot apply in the summary, for
-example a Pulley id that is pathfinder. Overrides also beat the matcher on
+example a Pulley id that is pathfinder. A recorded match is re-checked on
+every run against the rules that no human decision can waive: same banner,
+same state, and the canceled-on-both-sides rule. If the upstream facts have
+changed since the decision was recorded, the summary says the override needs
+reconfirmation and the matcher's own decision is used until the line is
+updated. Overrides also beat the matcher on
 rows it would have matched differently, so the file doubles as a correction
 log. Keep it in version control or a shared drive; it is the team's memory.
 

@@ -81,6 +81,19 @@ const DIRECTIONALS: Readonly<Record<string, string>> = {
   SW: "SW",
 };
 
+const HOUSE_NUMBER = /^\d+[A-Z]?$/;
+const PLACEHOLDERS: ReadonlySet<string> = new Set([
+  "N/A",
+  "NA",
+  "N A",
+  "NONE",
+  "UNKNOWN",
+  "TBD",
+  "-",
+  "--",
+  "?",
+]);
+
 /** Unit designators and the token that follows them are not part of the street. */
 const UNIT_PATTERN =
   /\b(?:SUITE|STE|UNIT|APT|APARTMENT|BLDG|BUILDING|FLOOR|FL|ROOM|RM|SPACE|SPC|DEPT)\b\.?\s*#?\s*[A-Z0-9-]+/g;
@@ -100,10 +113,13 @@ export function normalizeStreet(raw: string | null | undefined): string | null {
     .trim();
   if (text === "") return null;
 
+  if (PLACEHOLDERS.has(text)) return null;
   const tokens = text.split(" ").map((token) => DIRECTIONALS[token] ?? SUFFIXES[token] ?? token);
   const merged = mergeDirectionals(tokens);
-  const key = merged.join(" ");
-  return key === "" ? null : key;
+  // A usable key has a house number followed by at least one street token;
+  // "Main St" or "N/A" must never compare equal to anything.
+  if (merged.length < 2 || !HOUSE_NUMBER.test(merged[0] ?? "")) return null;
+  return merged.join(" ");
 }
 
 /**

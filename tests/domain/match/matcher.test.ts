@@ -431,6 +431,126 @@ describe("matchProjects: tier 5, dates plus locality", () => {
   });
 });
 
+describe("matchProjects: audit cases", () => {
+  it("does not let a full id resolve to two buildings when its store number is shared", () => {
+    const lowell = acme({
+      store: 4980,
+      sequence: 1001,
+      city: "Lowell",
+      state: "MA",
+      street: "565 Cypress Rd",
+    });
+    const worcester = acme({
+      store: 1912,
+      sequence: 1001,
+      city: "Worcester",
+      state: "MA",
+      formerLocationNumber: 4980,
+      street: "6591 Deer Run St",
+    });
+    const report = matchProjects(
+      inputs(
+        [lowell, worcester],
+        [
+          pulley({
+            id: "prj_w",
+            name: "4980.1001 Worcester, MA",
+            jurisdictionCity: "Worcester",
+            state: "MA",
+            street: "6591 Deer Run St",
+          }),
+        ],
+      ),
+    );
+    expect(report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual([
+      ["4980.1001", "no_match", null],
+      ["1912.1001", "matched", "prj_w"],
+    ]);
+  });
+
+  it("does not let the date tier accept a name that says another year", () => {
+    const d = one({ programYear: 2027, dates: { constructionStart: "2027-01-15" } }, [
+      pulley({
+        id: "prj_2026",
+        name: "Acme Reno Remodel 2026",
+        jurisdictionCity: "Reno",
+        constructionStart: "2027-01-15",
+      }),
+    ]);
+    expect(d.status).not.toBe("matched");
+  });
+
+  it("scopes reverse uniqueness checks to the state", () => {
+    const il = acme({ store: 1111, sequence: 1002, city: "Springfield", state: "IL" });
+    const ma = acme({ store: 2222, sequence: 1002, city: "Springfield", state: "MA" });
+    const report = matchProjects(
+      inputs(
+        [il, ma],
+        [
+          pulley({
+            id: "prj_il",
+            name: "Springfield Seq 1002",
+            jurisdictionCity: "Springfield",
+            state: "IL",
+          }),
+        ],
+      ),
+    );
+    expect(report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual([
+      ["1111.1002", "matched", "prj_il"],
+      ["2222.1002", "no_match", null],
+    ]);
+  });
+
+  it("sends unknown status vocabulary to review instead of matching", () => {
+    expect(
+      one({ status: "Active" }, [pulley({ name: "1556.1002 - Reno, NV", status: "Archived" })]),
+    ).toMatchObject({
+      status: "needs_review",
+      reason: ReasonCode.StatusUnknown,
+    });
+    expect(one({ status: "Paused" }, [pulley({ name: "1556.1002 - Reno, NV" })])).toMatchObject({
+      status: "needs_review",
+      reason: ReasonCode.StatusUnknown,
+    });
+    expect(
+      one({ status: "Canceled" }, [
+        pulley({ name: "1556.1002 - Reno, NV", status: "In Progress" }),
+      ]),
+    ).toMatchObject({
+      status: "needs_review",
+      reason: ReasonCode.StatusConflict,
+    });
+  });
+
+  it("lets the full id in the name pin the year when dates point elsewhere", () => {
+    const project = pulley({
+      id: "prj_x",
+      name: "Acme Market 1556.1005 – Reno",
+      projectType: "Remodel",
+      constructionStart: "2027-05-27",
+    });
+    const report = matchProjects(
+      inputs(
+        [
+          acme({ sequence: 1005, programYear: 2026, projectType: "Remodel" }),
+          acme({
+            sequence: 1007,
+            programYear: 2027,
+            projectType: "Remodel",
+            dates: { constructionStart: "2027-06-02" },
+          }),
+        ],
+        [project],
+      ),
+    );
+    expect(report.decisions.map((d) => [d.acmeId, d.status, d.reason])).toEqual([
+      ["1556.1005", "matched", ReasonCode.ExactId],
+      ["1556.1007", "needs_review", ReasonCode.YearConflict],
+    ]);
+  });
+});
+
 describe("matchProjects: year conflicts across claims", () => {
   it("keeps the strong claim and sends the other year's claim to review", () => {
     const store = pulley({
@@ -604,6 +724,19 @@ describe("matchProjects on the real dataset", () => {
       const winner = d.candidates[0];
       expect(winner?.pulleyId).toBe(d.pulleyId);
       expect(winner?.evidence.typeCompatible).toBe(true);
+      expect(winner?.evidence.statusAgree, d.acmeId).toBe(true);
     }
+  });
+
+  it("never assigns one Pulley project to Acme lines from different sites or years", () => {
+    const byAcme = new Map(normalized.acme.map((a) => [a.id, a]));
+    const claims = new Map<string, Set<string>>();
+    for (const d of report.decisions) {
+      if (d.status !== OutputStatus.Matched || !d.pulleyId) continue;
+      const a = byAcme.get(d.acmeId);
+      const key = `${a?.siteId}|${a?.programYear}`;
+      claims.set(d.pulleyId, new Set([...(claims.get(d.pulleyId) ?? []), key]));
+    }
+    for (const [pulleyId, keys] of claims) expect(keys.size, pulleyId).toBe(1);
   });
 });

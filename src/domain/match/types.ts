@@ -55,6 +55,8 @@ export const ReasonCode = {
   YearConflict: "YEAR_CONFLICT",
   /** The Acme id appears verbatim on a Pulley project filed under the other banner or state: likely a data-entry error. */
   IdOutsideScope: "ID_OUTSIDE_SCOPE",
+  /** A status value with no known lifecycle meaning on one side; the gate cannot be applied. */
+  StatusUnknown: "STATUS_UNKNOWN",
 } as const;
 export type ReasonCode = (typeof ReasonCode)[keyof typeof ReasonCode];
 

@@ -38,6 +38,16 @@ describe("normalizeStreet", () => {
     expect(streetNameKey(null)).toBeNull();
   });
 
+  it("needs a house number and rejects placeholders", () => {
+    expect(normalizeStreet("Main St")).toBeNull();
+    expect(normalizeStreet("Main Street")).toBeNull();
+    expect(normalizeStreet("N/A")).toBeNull();
+    expect(normalizeStreet("unknown")).toBeNull();
+    expect(normalizeStreet("TBD")).toBeNull();
+    expect(normalizeStreet("100")).toBeNull();
+    expect(normalizeStreet("100A Main St")).toBe("100A MAIN ST");
+  });
+
   it("returns null for missing or empty input", () => {
     expect(normalizeStreet(null)).toBeNull();
     expect(normalizeStreet(undefined)).toBeNull();

@@ -40,6 +40,29 @@ describe("acquireLock", () => {
     expect(JSON.parse(await readFile(lock.path, "utf8")).pid).toBe(333);
   });
 
+  it("grants a stale lock to exactly one of many simultaneous contenders", async () => {
+    await writeFile(join(dataDir, LOCK_FILENAME), JSON.stringify({ pid: 1, startedAt: "x" }));
+    const contenders = Array.from({ length: 20 }, (_, i) =>
+      acquireLock(dataDir, { pid: 1000 + i, isAlive: (pid) => pid !== 1 }).then(
+        (lock) => ({ ok: true as const, lock }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+    );
+    const results = await Promise.all(contenders);
+    const winners = results.filter((r) => r.ok);
+    expect(winners).toHaveLength(1);
+    for (const r of results) if (!r.ok) expect(r.error).toBeInstanceOf(LockedError);
+    const owner = JSON.parse(await readFile(join(dataDir, LOCK_FILENAME), "utf8")).pid;
+    expect(owner).toBe(
+      winners[0]?.ok ? Number(JSON.parse(await readFile(winners[0].lock.path, "utf8")).pid) : -1,
+    );
+  });
+
+  it("never writes an empty lock file", async () => {
+    const lock = await acquireLock(dataDir, { pid: 5, isAlive: () => true });
+    expect((await readFile(lock.path, "utf8")).length).toBeGreaterThan(0);
+  });
+
   it("does not remove a lock that now belongs to someone else", async () => {
     const mine = await acquireLock(dataDir, { pid: 111, isAlive: () => true });
     await writeFile(mine.path, JSON.stringify({ pid: 999, startedAt: "x" }));

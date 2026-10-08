@@ -1,9 +1,10 @@
-import { mkdir, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { MatchDecision } from "../domain/match/types.ts";
 import { IoError } from "../errors.ts";
 import type { PreviousDecision } from "../output/diff.ts";
+import { RUN_ID_PATTERN } from "./archive.ts";
 
 /**
  * Output directory handling.
@@ -31,13 +32,17 @@ export async function writeOutputs(
   const outRoot = join(dataDir, OUT_DIRNAME);
   const partial = join(outRoot, `${runId}.partial`);
   const final = join(outRoot, runId);
+  if (await exists(final)) {
+    throw new IoError(
+      `Output directory ${final} already exists; refusing to overwrite a previous run`,
+    );
+  }
   try {
     await rm(partial, { recursive: true, force: true });
     await mkdir(partial, { recursive: true });
     for (const [name, content] of Object.entries(files)) {
       await writeFile(join(partial, name), content);
     }
-    await rm(final, { recursive: true, force: true });
     await rename(partial, final);
   } catch (error) {
     await rm(partial, { recursive: true, force: true }).catch(() => undefined);
@@ -70,7 +75,16 @@ export async function updateLatest(dataDir: string, runId: string): Promise<void
 
 // ---------- Retention ----------
 
-const RUN_DIR = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
+const RUN_DIR = RUN_ID_PATTERN;
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Keep the newest `keep` run directories under data/raw and data/out and
