@@ -36,7 +36,8 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/sources/siteledger/` | auth, report download, XLS/XLSX/CSV parsing | done |
 | `src/sources/pulley/` | paginated client, response schema | done |
 | `src/sources/vocab.ts` | unknown-value detection for categorical fields | done |
-| `src/domain/normalize/` | name parser, address normalizer, canonical records | phase 2 |
+| `src/domain/model.ts` | canonical records, banner and type code tables | done |
+| `src/domain/normalize/` | name parser, address normalizer, join into canonical records | done |
 | `src/domain/match/` | candidate pool, tiers, reason codes | phase 3 |
 | `src/output/` | CSV writers, summary, run diff | phase 4 |
 | `src/run/archive.ts` | raw-input archive and replay | done |
