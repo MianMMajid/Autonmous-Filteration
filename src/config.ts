@@ -29,6 +29,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default("warn"),
   DATA_DIR: z.string().trim().min(1).default("./data"),
   RETAIN_RUNS: z.coerce.number().int().min(1).default(60),
+  OVERRIDES_FILE: z.string().trim().min(1).default("./overrides.csv"),
 });
 
 export interface Config {
@@ -45,6 +46,8 @@ export interface Config {
   readonly dataDir: string;
   /** How many past runs to keep under data/raw and data/out. */
   readonly retainRuns: number;
+  /** Human decisions file; tracked in the repository by default, unlike data/. */
+  readonly overridesFile: string;
 }
 
 /** Names of the variables an operator must supply. Used by `preflight`. */
@@ -85,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: parsed.LOG_LEVEL,
     dataDir: parsed.DATA_DIR,
     retainRuns: parsed.RETAIN_RUNS,
+    overridesFile: parsed.OVERRIDES_FILE,
   };
 }
 

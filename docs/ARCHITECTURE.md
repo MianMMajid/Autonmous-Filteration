@@ -45,7 +45,9 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/run/lock.ts` | single-run lock with stale-owner reclaim | done |
 | `src/run/outputs.ts` | atomic output directory, latest pointer, run record | done |
 | `src/run/overrides.ts` | human decisions from overrides.csv, validated and applied | done |
-| `src/run/sync.ts` | the whole run in order | done |
+| `src/run/quality.ts` | semantic input checks versus the previous run | done |
+| `src/run/status.ts` | freshness of the last published result | done |
+| `src/run/sync.ts` | the whole run in order; publication is the commit point | done |
 
 Dependency direction is one way: `cli -> run -> (sources | domain | output)`.
 `domain` imports nothing from `sources` or `output`; it works on plain typed
@@ -73,6 +75,8 @@ Defined in `src/errors.ts`.
 | 5 | `SchemaError` | Upstream data shape changed |
 | 6 | `LockedError` | Another run in progress |
 | 7 | `IoError` | Filesystem failure |
+| 8 | `QualityError` | Inputs schema-valid but empty or collapsed; nothing published |
+| 9 | `StaleError` | `status`: nothing published or older than the limit |
 
 ## Run artifacts
 
@@ -88,8 +92,13 @@ data/
   overrides.csv            optional human decisions, applied after matching
 ```
 
-`run.json` of the previous successful run feeds the diff in the next
-summary. A failed run never touches `latest.json`.
+`run.json` (format version 2) records the tool version, rules version,
+input counts and per-file SHA-256 hashes, the non-secret configuration, the
+input-quality assessment, the overrides file hash and the matcher's decision
+for every overridden row, and every decision with its evidence. The previous
+run's record feeds the diff, the review-workload line, and the input-quality
+comparison. A failed run never touches `latest.json`. Retention runs after
+publication and its failure is reported, never fatal.
 
 `run-id` is an ISO timestamp in UTC. `--dry-run` reads the newest `raw/`
 directory instead of contacting either system, so matching logic can be

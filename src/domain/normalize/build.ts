@@ -25,15 +25,72 @@ import { parseProjectName } from "./name.ts";
  */
 export function normalizeInputs(inputs: Pick<AcquiredInputs, "acme" | "pulley">): NormalizedInputs {
   const warnings: string[] = [];
-  const sites = inputs.acme.sites.map(toSite);
+  const siteRows = dedupeRows(
+    inputs.acme.sites,
+    (r) => r.siteId,
+    "Site Directory",
+    "Site ID",
+    warnings,
+  );
+  const dateRows = dedupeRows(
+    inputs.acme.keyDates,
+    (r) => r.projectId,
+    "Key Dates",
+    "Project ID",
+    warnings,
+  );
+  const sites = siteRows.rows.map(toSite);
   const sitesById = new Map(sites.map((site) => [site.siteId, site]));
   const sitesByLocation = indexSitesByLocation(sites);
-  const datesById = new Map(inputs.acme.keyDates.map((row) => [row.projectId, row]));
+  const datesById = new Map(dateRows.rows.map((row) => [row.projectId, row]));
 
-  const acme = buildAcmeProjects(inputs.acme.projects, sitesById, datesById, warnings);
+  const acme = buildAcmeProjects(inputs.acme.projects, sitesById, datesById, warnings, {
+    quarantinedSites: siteRows.quarantined,
+    quarantinedDates: dateRows.quarantined,
+  });
   const pulley = inputs.pulley.map(toPulleyRecord);
 
   return { acme, sites, sitesByLocation, pulley, warnings };
+}
+
+/**
+ * Join keys must be unique. Rows that repeat a key with identical content
+ * collapse to one (with a warning). Rows that repeat a key with *different*
+ * content are quarantined: none of them is used, because picking one by
+ * position would make the result depend on export order.
+ */
+function dedupeRows<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+  report: string,
+  keyName: string,
+  warnings: string[],
+): { readonly rows: T[]; readonly quarantined: ReadonlySet<string> } {
+  const firstByKey = new Map<string, T>();
+  const conflicting = new Set<string>();
+  let identical = 0;
+  for (const row of rows) {
+    const key = keyOf(row);
+    const first = firstByKey.get(key);
+    if (first === undefined) {
+      firstByKey.set(key, row);
+    } else if (JSON.stringify(first) === JSON.stringify(row)) {
+      identical++;
+    } else {
+      conflicting.add(key);
+    }
+  }
+  if (identical > 0) warnings.push(`${report}: ${identical} identical duplicate row(s) collapsed`);
+  if (conflicting.size > 0) {
+    const sample = [...conflicting].slice(0, 10).join(", ");
+    warnings.push(
+      `${report}: ${conflicting.size} ${keyName}(s) appear more than once with different content and were set aside: ${sample}${conflicting.size > 10 ? ", …" : ""}`,
+    );
+  }
+  return {
+    rows: [...firstByKey.entries()].filter(([key]) => !conflicting.has(key)).map(([, row]) => row),
+    quarantined: conflicting,
+  };
 }
 
 // ---------- Acme ----------
@@ -73,30 +130,41 @@ function buildAcmeProjects(
   sitesById: ReadonlyMap<string, AcmeSite>,
   datesById: ReadonlyMap<string, KeyDatesRow>,
   warnings: string[],
+  quarantined: { quarantinedSites: ReadonlySet<string>; quarantinedDates: ReadonlySet<string> },
 ): AcmeProject[] {
   const projects: AcmeProject[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, ProjectRegisterRow>();
   let duplicates = 0;
+  let conflicting = 0;
   let missingSite = 0;
+  let quarantinedSite = 0;
   let missingDates = 0;
   let storeMismatch = 0;
 
   for (const row of rows) {
-    if (seen.has(row.projectId)) {
-      duplicates++;
+    const first = seen.get(row.projectId);
+    if (first) {
+      // Every register row must yield one decision, so the first row stands;
+      // a conflicting repeat is reported rather than silently dropped.
+      if (JSON.stringify(first) !== JSON.stringify(row)) conflicting++;
+      else duplicates++;
       continue;
     }
-    seen.add(row.projectId);
+    seen.set(row.projectId, row);
 
     const [storeText = "", sequenceText = ""] = row.projectId.split(".");
     const store = Number(storeText);
     const sequence = Number(sequenceText);
     const site = sitesById.get(row.siteId) ?? null;
-    if (!site) missingSite++;
-    else if (store !== site.locationNumber && store !== site.formerLocationNumber) storeMismatch++;
+    if (!site) {
+      if (quarantined.quarantinedSites.has(row.siteId)) quarantinedSite++;
+      else missingSite++;
+    } else if (store !== site.locationNumber && store !== site.formerLocationNumber) {
+      storeMismatch++;
+    }
 
     const dates = datesById.get(row.projectId) ?? null;
-    if (!dates) missingDates++;
+    if (!dates && !quarantined.quarantinedDates.has(row.projectId)) missingDates++;
 
     const parsedName = parseProjectName(row.projectName);
     // Without a site row the banner still comes from the canonical name's code.
@@ -128,19 +196,40 @@ function buildAcmeProjects(
     });
   }
 
-  warnings.push(...joinWarnings({ duplicates, missingSite, storeMismatch, missingDates }));
+  warnings.push(
+    ...joinWarnings({
+      duplicates,
+      conflicting,
+      missingSite,
+      quarantinedSite,
+      storeMismatch,
+      missingDates,
+    }),
+  );
   return projects;
 }
 
 function joinWarnings(counts: {
   duplicates: number;
+  conflicting: number;
   missingSite: number;
+  quarantinedSite: number;
   storeMismatch: number;
   missingDates: number;
 }): string[] {
   const out: string[] = [];
   if (counts.duplicates > 0) {
-    out.push(`Project Register: ${counts.duplicates} duplicate project id(s) ignored`);
+    out.push(`Project Register: ${counts.duplicates} identical duplicate row(s) collapsed`);
+  }
+  if (counts.conflicting > 0) {
+    out.push(
+      `Project Register: ${counts.conflicting} project id(s) repeat with different content; the first row was used`,
+    );
+  }
+  if (counts.quarantinedSite > 0) {
+    out.push(
+      `Project Register: ${counts.quarantinedSite} project(s) reference a site set aside for conflicting Site Directory rows`,
+    );
   }
   if (counts.missingSite > 0) {
     out.push(

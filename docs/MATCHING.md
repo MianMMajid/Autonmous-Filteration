@@ -33,7 +33,11 @@ City is never a filter (brief: jurisdiction city differs from Acme's city).
 
 Evaluated in order. The first tier with any candidate decides. Within that
 tier candidates are ranked by evidence (see Scoring); a unique best candidate
-wins, a tie produces `needs_review` with all candidates listed. Tiers 2 to 6
+wins, a tie produces `needs_review` with all candidates listed. Ranking and
+acceptance are separate: two candidates that differ only in soft
+corroboration (jurisdiction city, street name without house number) are a
+tie, because the brief says those names legitimately differ. Only hard
+evidence separates candidates for automatic acceptance. Tiers 2 to 6
 first drop candidates whose temporal verdict is `conflict` (see Temporal
 evidence): the brief folds several Acme lines into one permit only for the
 same store and the same year.
@@ -59,9 +63,12 @@ claimed by Acme lines from different sites or program years (possible when
 the project has no dates to conflict with) is resolved across the register.
 The full id written in the name pins the project to that line's year and
 anchors the group; failing that, claims with dates within a week anchor it;
-failing that, the best-scored claim. Every other site-and-year claim goes to
-`needs_review` (`YEAR_CONFLICT`). A test enforces that no Pulley project is
-ever assigned to two sites or two years.
+failing that, the best-scored claim, and if the best scores tie across sites
+or years nothing anchors and every claim goes to review, so input order can
+never pick a winner. Every non-anchored site-and-year claim goes to
+`needs_review` (`YEAR_CONFLICT`). Tests enforce that no Pulley project is
+ever assigned to two sites or two years and that decisions are invariant to
+the order of the register and the pool.
 
 **Shared street keys.** When two sites share a normalized street key, an
 address-tier match there also needs city agreement. Street name alone (the
@@ -135,6 +142,23 @@ dates.
 | Only pathfinder or signage projects reference the id or store | `no_match` (`EXCLUDED_ONLY`) |
 | Nothing at all | `no_match` (`NO_CANDIDATE`) |
 
+## Input quality and publication
+
+Schema validation proves shape, not completeness. Before publishing, the run
+compares its inputs and outcome with the previous successful run:
+
+| Condition | Effect |
+|---|---|
+| Any report or the Pulley list has zero rows | publication refused |
+| Any input or the matched count fell by more than half | publication refused |
+| Any input or the matched count fell by more than a fifth | reported in the summary |
+| Site Directory or Key Dates rows repeat a key with different content | those keys are set aside; projects that reference them are matched without that evidence and the summary says so |
+| Rows repeat a key with identical content | collapsed to one, reported |
+
+A refused publication exits with code 8, names the condition, points at the
+archived inputs, and leaves `latest.json` untouched. `--accept-input-change`
+publishes anyway and records that choice in `run.json`.
+
 ## Status gate
 
 Applied to the winning candidate of tiers 1 to 3.
@@ -191,8 +215,8 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 333 (tier 1: 97, tier 2: 198, tier 3: 16, tier 4: 14, tier 5: 8) |
-| needs_review | 17 (4 ambiguous, 4 status conflict, 3 type mismatch, 3 year conflict, 2 id outside scope, 1 weak) |
+| matched | 332 (tier 1: 97, tier 2: 197, tier 3: 16, tier 4: 14, tier 5: 8) |
+| needs_review | 18 (4 ambiguous, 4 status conflict, 3 type mismatch, 4 year conflict, 2 id outside scope, 1 weak) |
 | no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
 | status differences on matched rows | 33 (reported, not an outcome) |
 

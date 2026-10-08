@@ -22,6 +22,9 @@ function decision(
     candidates: [],
     note: "",
     statusDrift: null,
+    acmeCity: "Reno",
+    acmeStreet: "100 Main St",
+    acmeDates: "",
     ...partial,
   };
 }
@@ -86,6 +89,27 @@ describe("renderDecisionsCsv and renderReviewCsv", () => {
     expect(renderMappingCsv(rows)).toBe(
       "acme_pcroject_id,pulley_project_id,status\n1556.1002,,no_match\n",
     );
+  });
+
+  it("carries the facts a reviewer needs and a recommended action", () => {
+    const csv = renderDecisionsCsv(decisions);
+    const header = csv.split("\n")[0] ?? "";
+    for (const column of [
+      "recommended_action",
+      "acme_city",
+      "acme_street",
+      "acme_dates",
+      "candidate_1_city",
+      "candidate_1_street",
+      "candidate_1_dates",
+      "candidate_1_evidence",
+    ]) {
+      expect(header).toContain(column);
+    }
+    const reviewRow = csv.split("\n").find((line) => line.startsWith("2210.1001,")) ?? "";
+    expect(reviewRow).toMatch(/pick the real one/);
+    const matchedRow = csv.split("\n").find((line) => line.startsWith("1556.1002,")) ?? "";
+    expect(matchedRow).not.toMatch(/pick the real one/);
   });
 
   it("review file contains only needs_review rows", () => {

@@ -46,15 +46,20 @@ The `status` column is one of `matched`, `needs_review`, or `no_match`.
 | 5 | Data shape changed | A report or API field changed; contact engineering |
 | 6 | Already running | Wait for the other run to finish |
 | 7 | Disk | Output folder not writable or disk full |
+| 8 | Inputs look wrong | An export came back empty or collapsed versus last time; nothing was published |
+| 9 | Stale | From `pnpm cli status`: nothing published, or older than the limit |
 
 A failed run never overwrites the previous good output.
 
+**Is the result current?** `pnpm cli status --max-age-hours 24` says when
+the last result was published and whether it is older than a day.
+
 **Settling a review row.** Once your team decides, add one line to
-`data/overrides.csv` and it will not come back:
+`overrides.csv` in this folder and it will not come back:
 
 ```
-acme_project_id,pulley_project_id,status,note
-3716.1005,prj_ae5zai,matched,confirmed with the lead 2026-10-09
+acme_project_id,pulley_project_id,status,note,author,decided_at
+3716.1005,prj_ae5zai,matched,confirmed with the lead,J. Lee,2026-10-09
 ```
 
 More in `docs/OPERATIONS.md`, including how to run it on a schedule.

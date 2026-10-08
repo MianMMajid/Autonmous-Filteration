@@ -79,6 +79,18 @@ for the same store and type with no dates on either (3716, 6912, 5272,
 mismatches where the only project at the store is a different kind of
 work, and 1 weak locality candidate.
 
+## What the figures mean
+
+| Figure | What it is |
+|---|---|
+| 333 of 400 (83%) | Auto-match coverage: how many rows the tool accepted. A count, not correctness. |
+| about 96% | The author's hand-check estimate of precision among accepted rows. Not a measured figure; see `docs/adjudication/`. |
+| about 81% | Coverage times that precision estimate: the share of all rows believed correctly matched. Not recall, which would need to know how many rows have a correct match at all. |
+| about 94% | The author's estimate of rows with the right outcome once justified `no_match` and `needs_review` rows count. Not reproducible from labels in this repository. |
+
+None of these is a measurement until an adjudicated reference set exists.
+`docs/adjudication/README.md` describes how to build one and what to report.
+
 ## Estimated match percentage
 
 Of the 336 rows reported as `matched`, the sweep after tuning flags 18 with
@@ -153,6 +165,37 @@ The scheduled workflow now publishes an artifact only on success, so a
 failed run can never present the previous run's CSV under its own name.
 
 Results after the third pass: 333 matched, 17 needs_review, 50 no_match.
+
+## Fourth pass: production-readiness assessment (same day)
+
+An assessment at commit `39c8016` rated the tool about 4 of 10 for
+unattended use and set release gates. The engineering items were implemented:
+
+- Acceptance separated from ranking: candidates differing only in soft
+  corroboration tie and go to review (one more row on today's data).
+- Order invariance: no anchor when best scores tie across sites or years;
+  a test shuffles the register and the pool and asserts identical decisions.
+- One scope rule shared by forward matching, reverse checks, and overrides.
+- Conflicting duplicate join rows are set aside rather than chosen by
+  position; identical duplicates collapse with a warning.
+- Input-quality gate before publication (empty exports, collapses versus
+  the previous run) with an explicit operator acceptance flag.
+- Provenance in `run.json`: rules version, tool version, input hashes,
+  configuration, overrides hash, matcher decisions before overrides.
+- Replay of any archived run by id, with hash verification.
+- `status` command with a freshness limit; the scheduled workflow runs it
+  and names artifacts by run id; publication only on success.
+- Review files show both sides' city, street, and dates, a plain reading of
+  each candidate's evidence, and a recommended action.
+- Overrides moved to a tracked `overrides.csv` with author and date;
+  coverage thresholds and dependency advisories enforced in CI; the vendored
+  tarball is hash-checked at preflight.
+
+Results after the fourth pass: 332 matched, 18 needs_review, 50 no_match.
+
+Items that need people rather than code are set up but not done: an
+adjudicated reference set (`docs/adjudication/`), an owner and backup, and
+agreed freshness and review-burden targets (`docs/OPERATIONS.md`).
 The estimate is unchanged. The audit is right that no precision figure can
 be established without adjudicated correct mappings; the figure here rests
 on the hand check described above and should be read as such.

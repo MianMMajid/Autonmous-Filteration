@@ -1,7 +1,7 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { parse as parseCsv } from "csv-parse/sync";
-import { acmeState, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
+import { acmeState, isInScope, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
 import type { MatchDecision, MatchReport, OutputStatus } from "../domain/match/types.ts";
 import { ReasonCode } from "../domain/match/types.ts";
 import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
@@ -31,27 +31,45 @@ export interface Override {
   readonly pulleyId: string | null;
   readonly status: Extract<OutputStatus, "matched" | "no_match">;
   readonly note: string;
+  /** Who decided; optional but recorded in run.json when present. */
+  readonly author: string;
+  /** ISO date of the decision; optional, validated when present. */
+  readonly decidedAt: string | null;
 }
 
 export interface LoadedOverrides {
   readonly overrides: readonly Override[];
   readonly problems: readonly string[];
+  /** Where the decisions came from and what exactly they said, for the run record. */
+  readonly source: { readonly path: string; readonly sha256: string | null; readonly rows: number };
 }
 
 /** Read and validate the overrides file. A missing file is an empty list. */
-export async function loadOverrides(dataDir: string): Promise<LoadedOverrides> {
-  const path = join(dataDir, OVERRIDES_FILENAME);
+export async function loadOverrides(path: string): Promise<LoadedOverrides> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if (isErrno(error, "ENOENT")) return { overrides: [], problems: [] };
+    if (isErrno(error, "ENOENT")) {
+      return { overrides: [], problems: [], source: { path, sha256: null, rows: 0 } };
+    }
     throw new SchemaError(`Could not read ${path}`, { cause: error });
   }
-  return parseOverrides(text, path);
+  const parsed = parseOverrides(text, path);
+  return {
+    ...parsed,
+    source: {
+      path,
+      sha256: createHash("sha256").update(text).digest("hex"),
+      rows: parsed.overrides.length + parsed.problems.length,
+    },
+  };
 }
 
-export function parseOverrides(text: string, source = OVERRIDES_FILENAME): LoadedOverrides {
+export function parseOverrides(
+  text: string,
+  source = OVERRIDES_FILENAME,
+): Pick<LoadedOverrides, "overrides" | "problems"> {
   let rows: Record<string, string>[];
   try {
     rows = parseCsv(text, {
@@ -77,49 +95,80 @@ export function parseOverrides(text: string, source = OVERRIDES_FILENAME): Loade
   const overrides: Override[] = [];
   const seen = new Set<string>();
   rows.forEach((row, index) => {
-    const line = index + 2;
-    const acmeId = row["acme_project_id"] ?? "";
-    const pulleyId = row["pulley_project_id"] || null;
-    const status = row["status"] ?? "";
-    const note = row["note"] ?? "";
-    if (!/^\d{4}\.\d{4}$/.test(acmeId)) {
-      problems.push(`${source} line ${line}: acme_project_id "${acmeId}" is not store.sequence`);
+    const parsed = parseOverrideRow(row, index + 2, source);
+    if (typeof parsed === "string") {
+      problems.push(parsed);
       return;
     }
-    if (seen.has(acmeId)) {
+    if (seen.has(parsed.acmeId)) {
       problems.push(
-        `${source} line ${line}: duplicate acme_project_id ${acmeId}; first entry wins`,
+        `${source} line ${index + 2}: duplicate acme_project_id ${parsed.acmeId}; first entry wins`,
       );
       return;
     }
-    if (status !== "matched" && status !== "no_match") {
-      problems.push(`${source} line ${line}: status must be matched or no_match, got "${status}"`);
-      return;
-    }
-    if (status === "matched" && !pulleyId) {
-      problems.push(`${source} line ${line}: matched requires a pulley_project_id`);
-      return;
-    }
-    if (status === "no_match" && pulleyId) {
-      problems.push(`${source} line ${line}: no_match must not carry a pulley_project_id`);
-      return;
-    }
-    seen.add(acmeId);
-    overrides.push({ acmeId, pulleyId: status === "matched" ? pulleyId : null, status, note });
+    seen.add(parsed.acmeId);
+    overrides.push(parsed);
   });
   return { overrides, problems };
+}
+
+/** One CSV row to an Override, or the problem with it. */
+function parseOverrideRow(
+  row: Record<string, string>,
+  line: number,
+  source: string,
+): Override | string {
+  const acmeId = row["acme_project_id"] ?? "";
+  const pulleyId = row["pulley_project_id"] || null;
+  const status = row["status"] ?? "";
+  const decidedAt = row["decided_at"] ?? "";
+  if (!/^\d{4}\.\d{4}$/.test(acmeId)) {
+    return `${source} line ${line}: acme_project_id "${acmeId}" is not store.sequence`;
+  }
+  if (status !== "matched" && status !== "no_match") {
+    return `${source} line ${line}: status must be matched or no_match, got "${status}"`;
+  }
+  if (status === "matched" && !pulleyId) {
+    return `${source} line ${line}: matched requires a pulley_project_id`;
+  }
+  if (status === "no_match" && pulleyId) {
+    return `${source} line ${line}: no_match must not carry a pulley_project_id`;
+  }
+  if (decidedAt && !/^\d{4}-\d{2}-\d{2}(T[0-9:.]+Z?)?$/.test(decidedAt)) {
+    return `${source} line ${line}: decided_at "${decidedAt}" is not an ISO date`;
+  }
+  return {
+    acmeId,
+    pulleyId: status === "matched" ? pulleyId : null,
+    status,
+    note: row["note"] ?? "",
+    author: row["author"] ?? "",
+    decidedAt: decidedAt || null,
+  };
+}
+
+export interface OverriddenDecision {
+  readonly acmeId: string;
+  /** What the matcher decided before the human decision replaced it. */
+  readonly matcher: {
+    readonly status: OutputStatus;
+    readonly pulleyId: string | null;
+    readonly reason: string;
+  };
+  readonly override: Override;
 }
 
 export interface AppliedOverrides {
   readonly report: MatchReport;
   readonly applied: number;
   readonly problems: readonly string[];
+  readonly overridden: readonly OverriddenDecision[];
 }
 
 /** Replace matcher decisions with human ones, validating targets against the candidate pool. */
 export function applyOverrides(
   report: MatchReport,
-  loaded: LoadedOverrides,
+  loaded: Pick<LoadedOverrides, "overrides" | "problems">,
   inputs: { readonly acme: readonly AcmeProject[]; readonly pulley: readonly PulleyRecord[] },
 ): AppliedOverrides {
   const { pulley } = inputs;
@@ -127,6 +176,7 @@ export function applyOverrides(
   const byAcme = new Map(report.decisions.map((d) => [d.acmeId, d]));
   const acmeById = new Map(inputs.acme.map((a) => [a.id, a]));
   const pulleyById = new Map(pulley.map((p) => [p.id, p]));
+  const overridden: OverriddenDecision[] = [];
   let applied = 0;
 
   for (const override of loaded.overrides) {
@@ -140,20 +190,27 @@ export function applyOverrides(
       problems.push(problem);
       continue;
     }
+    const who = override.author ? ` by ${override.author}` : "";
+    const when = override.decidedAt ? ` on ${override.decidedAt}` : "";
+    overridden.push({
+      acmeId: override.acmeId,
+      matcher: { status: current.status, pulleyId: current.pulleyId, reason: current.reason },
+      override,
+    });
     byAcme.set(override.acmeId, {
       ...current,
       status: override.status,
       pulleyId: override.pulleyId,
       reason: ReasonCode.Override,
       tier: null,
-      note: override.note ? `override: ${override.note}` : "override",
+      note: `override${who}${when}${override.note ? `: ${override.note}` : ""}`,
       statusDrift: null,
     });
     applied++;
   }
 
   const decisions = report.decisions.map((d) => byAcme.get(d.acmeId) ?? d);
-  return { report: withDecisions(report, decisions, pulley), applied, problems };
+  return { report: withDecisions(report, decisions, pulley), applied, problems, overridden };
 }
 
 /** Why a matched override's target cannot be applied, or null when it can. */
@@ -181,12 +238,11 @@ function targetProblem(
 
 /** Why a recorded match can no longer be applied as-is, or null when it still holds. */
 function reconfirmationNeeded(acme: AcmeProject, target: PulleyRecord): string | null {
-  if (acme.banner !== null && target.banner !== acme.banner) {
-    return `${target.id} is ${target.organization}, the Acme site is ${acme.banner}`;
-  }
-  const state = acmeState(acme);
-  if (state !== null && target.state !== state) {
-    return `${target.id} is in ${target.state}, the Acme site is in ${state}`;
+  if (!isInScope(acme, target)) {
+    const state = acmeState(acme);
+    return target.banner !== acme.banner
+      ? `${target.id} is ${target.organization}, the Acme site is ${acme.banner ?? "unknown banner"}`
+      : `${target.id} is in ${target.state}, the Acme site is in ${state ?? "an unknown state"}`;
   }
   const verdict = statusVerdict(acme.status, target.status);
   if (verdict === StatusVerdict.Conflict) {

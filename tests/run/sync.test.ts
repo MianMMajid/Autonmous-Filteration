@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Config } from "../../src/config.ts";
-import { IoError, LockedError } from "../../src/errors.ts";
+import { IoError, LockedError, QualityError } from "../../src/errors.ts";
 import { createLogger } from "../../src/logger.ts";
 import { acquireLock } from "../../src/run/lock.ts";
 import { loadPreviousRun } from "../../src/run/outputs.ts";
+import { readPublishedStatus, renderStatus } from "../../src/run/status.ts";
 import { runSync } from "../../src/run/sync.ts";
 import { HttpClient } from "../../src/sources/http.ts";
 import { json, mockFetch, noSleep } from "../helpers/mock-fetch.ts";
@@ -30,6 +31,7 @@ function config(): Config {
     logLevel: "error",
     dataDir,
     retainRuns: 60,
+    overridesFile: join(dataDir, "overrides.csv"),
   };
 }
 
@@ -186,6 +188,85 @@ describe("runSync end to end", () => {
     expect(second.summary).toMatch(/Overrides: 1 applied/);
     expect(second.summary).toMatch(/9999\.1000 ignored: not in the Project Register/);
     expect(second.diff.changes.find((c) => c.acmeId === review.acmeId)?.kind).toBe("newly_matched");
+  });
+
+  it("refuses to publish when the inputs collapse, and publishes when the operator accepts", async () => {
+    await run(upstreams(), "2026-10-08T10:00:00Z");
+    const collapsed = upstreams((projects) => {
+      projects.length = 10;
+    });
+    await expect(run(collapsed, "2026-10-08T11:00:00Z")).rejects.toBeInstanceOf(QualityError);
+    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00-000Z");
+    expect(await readdir(join(dataDir, "out"))).not.toContain("2026-10-08T11-00-00-000Z");
+
+    const forced = await runSync({
+      config: config(),
+      log: createLogger("error", false),
+      dryRun: false,
+      acceptInputChange: true,
+      http: new HttpClient({ fetch: collapsed.fetch, retries: 0, sleep: noSleep }),
+      now: () => new Date("2026-10-08T12:00:00Z"),
+    });
+    expect(forced.quality.blockers.length).toBeGreaterThan(0);
+    expect(forced.summary).toMatch(/publication was forced with --accept-input-change/);
+    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T12-00-00-000Z");
+  });
+
+  it("records provenance in run.json and can replay a chosen historical run", async () => {
+    const first = await run(upstreams(), "2026-10-08T10:00:00Z");
+    const record = JSON.parse(await readFile(join(first.outputDirectory, "run.json"), "utf8"));
+    expect(record.version).toBe(2);
+    expect(record.rulesVersion).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+    expect(record.toolVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(record.inputs.counts).toEqual({
+      acmeProjects: 400,
+      acmeSites: 363,
+      acmeKeyDates: 400,
+      pulleyProjects: 449,
+    });
+    expect(
+      record.inputs.files.every((f: { sha256?: string }) => /^[0-9a-f]{64}$/.test(f.sha256 ?? "")),
+    ).toBe(true);
+    expect(record.overrides.path).toBe(join(dataDir, "overrides.csv"));
+    expect(record.config.acceptInputChange).toBe(false);
+    expect(record.publishedAt).toBe("2026-10-08T10:00:00.000Z");
+
+    await run(
+      upstreams((projects) => {
+        projects.splice(0, 5);
+      }),
+      "2026-10-08T11:00:00Z",
+    );
+    const replay = await runSync({
+      config: config(),
+      log: createLogger("error", false),
+      dryRun: true,
+      replayRunId: "2026-10-08T10-00-00-000Z",
+      now: () => new Date("2026-10-08T12:00:00Z"),
+    });
+    expect(replay.report.counts).toEqual(first.report.counts);
+    expect(replay.summary).toMatch(/replayed archive/);
+  });
+
+  it("reports review workload against the previous run", async () => {
+    const first = await run(upstreams(), "2026-10-08T10:00:00Z");
+    const review = first.report.decisions.find((d) => d.status === "needs_review");
+    const target = review?.candidates[0]?.pulleyId;
+    if (!review || !target) throw new Error("expected a review row with a candidate");
+    await writeFile(
+      join(dataDir, "overrides.csv"),
+      `acme_project_id,pulley_project_id,status,note,author,decided_at\n${review.acmeId},${target},matched,settled,J. Lee,2026-10-09\n`,
+    );
+    const second = await run(upstreams(), "2026-10-08T11:00:00Z");
+    expect(second.summary).toMatch(/Review workload: 0 new, 1 resolved since the previous run/);
+    expect(second.report.decisions.find((d) => d.acmeId === review.acmeId)?.note).toBe(
+      "override by J. Lee on 2026-10-09: settled",
+    );
+    const status = await readPublishedStatus(dataDir, new Date("2026-10-08T13:00:00Z"));
+    expect(status?.runId).toBe("2026-10-08T11-00-00-000Z");
+    expect(status?.ageHours).toBeCloseTo(2, 5);
+    expect(renderStatus(status, 1)).toMatch(/STALE/);
+    expect(renderStatus(status, 3)).toMatch(/Fresh/);
   });
 
   it("refuses to run while another sync holds the lock, and leaves latest alone", async () => {

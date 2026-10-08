@@ -5,6 +5,7 @@ import {
   acmeStoreNumbers,
   cityMatches,
   dateProximityDays,
+  isInScope,
   isPulleyCanceled,
   StatusVerdict,
   sequenceRelation,
@@ -48,6 +49,12 @@ import {
  * candidates are ranked by evidence; a unique best candidate wins, otherwise
  * needs_review.
  */
+
+/**
+ * Bump when a rule, weight, or tier changes. Recorded in run.json so a
+ * historical decision can be attributed to the rules that produced it.
+ */
+export const RULES_VERSION = "2026-10-08.4";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
@@ -123,26 +130,11 @@ function resolveYearConflicts(
   }
   const demoted = new Map<string, MatchDecision>();
   for (const [pulleyId, group] of claims) {
-    const sameYear = new Set(group.map((d) => yearOf.get(d.acmeId))).size < 2;
-    const sameSite = new Set(group.map((d) => siteOf.get(d.acmeId))).size < 2;
-    if (sameYear && sameSite) continue;
-    // The full id written in the name pins the project to that line's year;
-    // exact dates are next; otherwise the best-scored claim anchors the group.
-    const byId = group.filter((d) => d.tier === Tier.ExactId);
-    const byDates = group.filter(isStrongClaim);
-    const anchors =
-      byId.length > 0
-        ? byId
-        : byDates.length > 0
-          ? byDates
-          : [
-              [...group].sort(
-                (a, b) => (b.candidates[0]?.score ?? 0) - (a.candidates[0]?.score ?? 0),
-              )[0] as MatchDecision,
-            ];
-    const keep = new Set(anchors.map((d) => `${siteOf.get(d.acmeId)}|${yearOf.get(d.acmeId)}`));
+    const keyOf = (d: MatchDecision): string => `${siteOf.get(d.acmeId)}|${yearOf.get(d.acmeId)}`;
+    if (new Set(group.map(keyOf)).size < 2) continue;
+    const keep = anchorKeys(group, keyOf);
     for (const d of group) {
-      if (keep.has(`${siteOf.get(d.acmeId)}|${yearOf.get(d.acmeId)}`)) continue;
+      if (keep.has(keyOf(d))) continue;
       const others = group
         .filter((o) => o !== d)
         .map((o) => `${o.acmeId} (${yearOf.get(o.acmeId)})`)
@@ -158,6 +150,30 @@ function resolveYearConflicts(
     }
   }
   return decisions.map((d) => demoted.get(d.acmeId) ?? d);
+}
+
+/**
+ * Which site-and-year keys may keep a shared Pulley project. The full id
+ * written in the name pins the project to that line; exact dates are next;
+ * otherwise the best-scored claim, and if the best scores tie across keys,
+ * nothing anchors, so input order can never pick a winner.
+ */
+function anchorKeys(
+  group: readonly MatchDecision[],
+  keyOf: (d: MatchDecision) => string,
+): Set<string> {
+  const byId = group.filter((d) => d.tier === Tier.ExactId);
+  if (byId.length > 0) return new Set(byId.map(keyOf));
+  const byDates = group.filter(isStrongClaim);
+  if (byDates.length > 0) return new Set(byDates.map(keyOf));
+  const keys = new Set(bestScored(group).map(keyOf));
+  return keys.size > 1 ? new Set() : keys;
+}
+
+/** Claims sharing the top score; several when nothing separates them. */
+function bestScored(group: readonly MatchDecision[]): MatchDecision[] {
+  const best = Math.max(...group.map((d) => d.candidates[0]?.score ?? 0));
+  return group.filter((d) => (d.candidates[0]?.score ?? 0) === best);
 }
 
 function isStrongClaim(d: MatchDecision): boolean {
@@ -232,9 +248,7 @@ function memo(
 
 function decide(acme: AcmeProject, context: Context): MatchDecision {
   const state = acmeState(acme);
-  const scoped = context.pool.filter(
-    (p) => p.banner === acme.banner && (state === null || p.state === state),
-  );
+  const scoped = context.pool.filter((p) => isInScope(acme, p));
   const sameYear = (p: PulleyRecord): boolean => temporalVerdict(acme, p) !== Temporal.Conflict;
 
   const storeAll = scoped.filter((p) => isStoreCandidate(acme, p, context.sharedNumbers));
@@ -360,7 +374,7 @@ function isSequenceCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
 function identifiedAcmeId(pulley: PulleyRecord, register: readonly AcmeProject[]): string | null {
   let found: string | null = null;
   for (const other of register) {
-    if (other.banner !== pulley.banner || acmeState(other) !== pulley.state) continue;
+    if (!isInScope(other, pulley)) continue;
     if (!isSequenceCandidate(other, pulley)) continue;
     if (!typesCompatible(other.projectType, pulley.projectType)) continue;
     if (temporalVerdict(other, pulley) === Temporal.Conflict) continue;
@@ -397,7 +411,7 @@ function identifiedAcmeIdByDates(
 ): string | null {
   let found: string | null = null;
   for (const other of register) {
-    if (other.banner !== pulley.banner || acmeState(other) !== pulley.state) continue;
+    if (!isInScope(other, pulley)) continue;
     if (!isDateCandidate(other, pulley)) continue;
     if (temporalVerdict(other, pulley) === Temporal.Conflict) continue;
     if (found !== null) return null;
@@ -447,15 +461,32 @@ function toCandidate(acme: AcmeProject, pulley: PulleyRecord, tier: Tier): Candi
     cityMatch: cityMatches(acme, pulley),
     statusAgree: statusesAgree(acme.status, pulley.status),
   };
-  return {
+  const candidate: Candidate = {
     pulleyId: pulley.id,
     pulleyName: pulley.name,
     pulleyStatus: pulley.status,
     pulleyType: pulley.projectType,
+    pulleyCity: pulley.jurisdictionCity,
+    pulleyStreet: pulley.streetAddress,
+    pulleyDates: describeDates({
+      cs: pulley.constructionStart,
+      ps: pulley.permitSubmitted,
+      pa: pulley.permitApproved,
+    }),
+    evidenceSummary: "",
     tier,
     evidence,
     score: scoreEvidence(evidence),
   };
+  return { ...candidate, evidenceSummary: describeEvidence(candidate) };
+}
+
+function describeDates(d: { cs: string | null; ps: string | null; pa: string | null }): string {
+  const parts: string[] = [];
+  if (d.cs) parts.push(`cs ${d.cs}`);
+  if (d.ps) parts.push(`ps ${d.ps}`);
+  if (d.pa) parts.push(`pa ${d.pa}`);
+  return parts.join(", ");
 }
 
 /**
@@ -495,6 +526,15 @@ function temporalWeight(e: Evidence): number {
   }
 }
 
+/** Score without the soft corroboration bonuses; two candidates equal here are a real tie. */
+function decisiveScore(candidate: Candidate): number {
+  const e = candidate.evidence;
+  let soft = 0;
+  if (e.cityMatch) soft += 3;
+  if (e.streetName && !e.streetExact) soft += 5;
+  return candidate.score - soft;
+}
+
 function rank(candidates: Candidate[]): Candidate[] {
   return candidates.sort((a, b) => b.score - a.score || a.pulleyId.localeCompare(b.pulleyId));
 }
@@ -508,7 +548,11 @@ function strongDecision(
   const top = candidates[0];
   if (!top) return noCandidate(acme, context.excluded);
   const tier = top.tier;
-  const tied = candidates.filter((c) => c.score === top.score);
+  // Acceptance is separate from ranking: candidates that differ only in
+  // soft corroboration (jurisdiction city, street name) are a tie, because
+  // the brief says those names legitimately differ. Only hard evidence
+  // (id, store, type, dates, sequence, exact street, status) separates them.
+  const tied = candidates.filter((c) => decisiveScore(c) === decisiveScore(top));
   const live = tied.filter((c) => !isPulleyCanceled(c.pulleyStatus));
   const winner = tied.length === 1 ? top : live.length === 1 ? live[0] : undefined;
 
@@ -518,7 +562,7 @@ function strongDecision(
       candidates,
       tier,
       ReasonCode.Ambiguous,
-      `${tied.length} candidates tie on evidence in tier ${tier}`,
+      `${tied.length} candidates tie on decisive evidence in tier ${tier}`,
     );
   }
   if (!winner.evidence.typeCompatible) {
@@ -681,6 +725,9 @@ function base(
   | "acmeStatus"
   | "acmeType"
   | "programYear"
+  | "acmeCity"
+  | "acmeStreet"
+  | "acmeDates"
   | "candidates"
   | "tier"
   | "statusDrift"
@@ -691,6 +738,13 @@ function base(
     acmeStatus: acme.status,
     acmeType: acme.projectType,
     programYear: acme.programYear,
+    acmeCity: acme.site?.city ?? acme.parsedName.canonical?.city ?? "",
+    acmeStreet: acme.site?.streetAddress ?? "",
+    acmeDates: describeDates({
+      cs: acme.dates?.constructionStart ?? null,
+      ps: acme.dates?.permitSubmittedActual ?? acme.dates?.permitSubmittedProjected ?? null,
+      pa: acme.dates?.permitApproved ?? null,
+    }),
     candidates: candidates.slice(0, 5),
     tier,
     statusDrift: null,
@@ -699,6 +753,11 @@ function base(
 
 function describeWinner(candidate: Candidate | undefined): string {
   if (!candidate) return "no candidate";
+  return `${candidate.pulleyId}: ${describeEvidence(candidate)}`;
+}
+
+/** The evidence a candidate carries, in words a reviewer can scan. */
+function describeEvidence(candidate: Candidate): string {
   const e = candidate.evidence;
   const parts: string[] = [];
   if (e.exactId) parts.push("exact id");
@@ -712,5 +771,8 @@ function describeWinner(candidate: Candidate | undefined): string {
   if (e.streetExact) parts.push("street");
   else if (e.streetName) parts.push("street name");
   if (e.cityMatch) parts.push("city");
-  return `${candidate.pulleyId}: ${parts.join(", ") || "no supporting evidence"}`;
+  if (e.temporal === Temporal.Conflict) parts.push("OTHER YEAR");
+  if (!e.typeCompatible) parts.push("INCOMPATIBLE TYPE");
+  if (!e.statusAgree) parts.push("STATUS DISAGREES");
+  return parts.join(", ") || "no supporting evidence";
 }

@@ -77,6 +77,41 @@ describe("normalizeInputs on the real dataset", () => {
     expect(result.acme[0]?.banner).toBe(Banner.WarehouseClub); // name ends in -WHC-RM-2027
   });
 
+  it("collapses identical duplicate site rows and quarantines conflicting ones regardless of order", () => {
+    const base = loadInputs();
+    const site = base.acme.sites[0] as (typeof base.acme.sites)[number];
+    const twin = { ...site };
+    const conflict = { ...site, streetAddress: "999 Elsewhere Rd" };
+    const referencing = base.acme.projects.filter((p) => p.siteId === site.siteId);
+    expect(referencing.length).toBeGreaterThan(0);
+
+    const identical = normalizeInputs({
+      ...base,
+      acme: { ...base.acme, sites: [...base.acme.sites, twin] },
+    });
+    expect(identical.sites).toHaveLength(base.acme.sites.length);
+    expect(identical.warnings.join("\n")).toMatch(/1 identical duplicate row/);
+
+    const first = normalizeInputs({
+      ...base,
+      acme: { ...base.acme, sites: [conflict, ...base.acme.sites] },
+    });
+    const last = normalizeInputs({
+      ...base,
+      acme: { ...base.acme, sites: [...base.acme.sites, conflict] },
+    });
+    for (const result of [first, last]) {
+      expect(result.sites.find((s) => s.siteId === site.siteId)).toBeUndefined();
+      expect(result.warnings.join("\n")).toMatch(new RegExp(`set aside: ${site.siteId}`));
+      expect(result.warnings.join("\n")).toMatch(/reference a site set aside/);
+      for (const p of result.acme.filter((p) => p.siteId === site.siteId))
+        expect(p.site).toBeNull();
+    }
+    expect(first.acme.map((a) => [a.id, a.site?.siteId ?? null])).toEqual(
+      last.acme.map((a) => [a.id, a.site?.siteId ?? null]),
+    );
+  });
+
   it("warns on join problems instead of failing", () => {
     const inputs = loadInputs();
     const broken = {
@@ -93,7 +128,7 @@ describe("normalizeInputs on the real dataset", () => {
     };
     const result = normalizeInputs(broken as Parameters<typeof normalizeInputs>[0]);
     expect(result.acme).toHaveLength(3);
-    expect(result.warnings.join("\n")).toMatch(/1 duplicate/);
+    expect(result.warnings.join("\n")).toMatch(/1 identical duplicate/);
     expect(result.warnings.join("\n")).toMatch(/missing from the Site Directory/);
     expect(result.warnings.join("\n")).toMatch(/no Key Dates row/);
   });

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -24,6 +25,11 @@ const manifestFileSchema = z.object({
   bytes: z.number().int().nonnegative(),
   /** Page order for pulley-page files; absent otherwise. */
   page: z.number().int().positive().optional(),
+  /** Hex SHA-256 of the file content; absent only in archives written before provenance was recorded. */
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
 
 export const manifestSchema = z.object({
@@ -87,8 +93,11 @@ export class RawArchive {
       throw new IoError(`Could not write ${path}`, { cause: error });
     }
     const bytes = typeof content === "string" ? Buffer.byteLength(content) : content.byteLength;
+    const sha256 = sha256Hex(content);
     this.#files.push(
-      page === undefined ? { name: safeName, kind, bytes } : { name: safeName, kind, bytes, page },
+      page === undefined
+        ? { name: safeName, kind, bytes, sha256 }
+        : { name: safeName, kind, bytes, page, sha256 },
     );
     return path;
   }
@@ -116,6 +125,10 @@ export interface LoadedArchive {
   readonly read: (file: ArchiveManifestFile) => Promise<Uint8Array>;
 }
 
+export function sha256Hex(content: Uint8Array | string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
 /** Find the newest run directory under `data/raw` that has a valid manifest. */
 export async function loadLatestArchive(dataDir: string): Promise<LoadedArchive | null> {
   const rawDir = join(dataDir, "raw");
@@ -130,30 +143,47 @@ export async function loadLatestArchive(dataDir: string): Promise<LoadedArchive 
     return null;
   }
   for (const runId of entries) {
-    const directory = join(rawDir, runId);
-    let text: string;
-    try {
-      text = await readFile(join(directory, MANIFEST_FILENAME), "utf8");
-    } catch {
-      continue;
-    }
-    const parsed = manifestSchema.safeParse(JSON.parse(text));
-    if (!parsed.success) {
-      throw new SchemaError(`Archive ${directory} has an invalid manifest`, {
-        details: { issues: parsed.error.issues.map((issue) => issue.message) },
-      });
-    }
-    return {
-      directory,
-      manifest: parsed.data,
-      read: async (file) => {
-        try {
-          return new Uint8Array(await readFile(join(directory, file.name)));
-        } catch (error) {
-          throw new IoError(`Could not read archived file ${file.name}`, { cause: error });
-        }
-      },
-    };
+    const archive = await loadArchive(dataDir, runId);
+    if (archive) return archive;
   }
   return null;
+}
+
+/**
+ * Load one archived run by id. Null when that run has no manifest. Files are
+ * verified against the manifest's content hash when read, so a tampered or
+ * damaged archive is reported rather than silently replayed.
+ */
+export async function loadArchive(dataDir: string, runId: string): Promise<LoadedArchive | null> {
+  const directory = join(dataDir, "raw", runId);
+  let text: string;
+  try {
+    text = await readFile(join(directory, MANIFEST_FILENAME), "utf8");
+  } catch {
+    return null;
+  }
+  const parsed = manifestSchema.safeParse(JSON.parse(text));
+  if (!parsed.success) {
+    throw new SchemaError(`Archive ${directory} has an invalid manifest`, {
+      details: { issues: parsed.error.issues.map((issue) => issue.message) },
+    });
+  }
+  return {
+    directory,
+    manifest: parsed.data,
+    read: async (file) => {
+      let bytes: Uint8Array;
+      try {
+        bytes = new Uint8Array(await readFile(join(directory, file.name)));
+      } catch (error) {
+        throw new IoError(`Could not read archived file ${file.name}`, { cause: error });
+      }
+      if (file.sha256 !== undefined && sha256Hex(bytes) !== file.sha256) {
+        throw new SchemaError(
+          `Archived file ${file.name} in ${runId} does not match its recorded hash; the archive was altered`,
+        );
+      }
+      return bytes;
+    },
+  };
 }

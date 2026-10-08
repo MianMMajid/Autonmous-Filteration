@@ -22,8 +22,22 @@ bad-id,prj_a,matched,
 `;
     const { overrides, problems } = parseOverrides(text, "test.csv");
     expect(overrides).toEqual([
-      { acmeId: "1556.1002", pulleyId: "prj_a", status: "matched", note: "confirmed" },
-      { acmeId: "1556.1003", pulleyId: null, status: "no_match", note: "never opened" },
+      {
+        acmeId: "1556.1002",
+        pulleyId: "prj_a",
+        status: "matched",
+        note: "confirmed",
+        author: "",
+        decidedAt: null,
+      },
+      {
+        acmeId: "1556.1003",
+        pulleyId: null,
+        status: "no_match",
+        note: "never opened",
+        author: "",
+        decidedAt: null,
+      },
     ]);
     expect(problems).toHaveLength(5);
     expect(problems[0]).toMatch(/line 4.*not store\.sequence/);
@@ -43,6 +57,25 @@ bad-id,prj_a,matched,
   });
 });
 
+describe("parseOverrides author and decided_at", () => {
+  it("records who decided and when, and rejects a bad date", () => {
+    const text =
+      "acme_project_id,pulley_project_id,status,note,author,decided_at\n1556.1002,prj_a,matched,ok,J. Lee,2026-10-09\n1556.1003,,no_match,,,next tuesday\n";
+    const { overrides, problems } = parseOverrides(text, "t.csv");
+    expect(overrides).toEqual([
+      {
+        acmeId: "1556.1002",
+        pulleyId: "prj_a",
+        status: "matched",
+        note: "ok",
+        author: "J. Lee",
+        decidedAt: "2026-10-09",
+      },
+    ]);
+    expect(problems[0]).toMatch(/line 3.*decided_at/);
+  });
+});
+
 describe("loadOverrides", () => {
   let dataDir: string;
   beforeEach(async () => {
@@ -53,12 +86,16 @@ describe("loadOverrides", () => {
   });
 
   it("treats a missing file as no overrides", async () => {
-    expect(await loadOverrides(dataDir)).toEqual({ overrides: [], problems: [] });
+    const missing = await loadOverrides(join(dataDir, "overrides.csv"));
+    expect(missing.overrides).toEqual([]);
+    expect(missing.source.sha256).toBeNull();
   });
 
   it("reads the file when present", async () => {
     await writeFile(join(dataDir, "overrides.csv"), `${HEADER}1556.1002,prj_a,matched,ok\n`);
-    expect((await loadOverrides(dataDir)).overrides).toHaveLength(1);
+    const loaded = await loadOverrides(join(dataDir, "overrides.csv"));
+    expect(loaded.overrides).toHaveLength(1);
+    expect(loaded.source.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -85,6 +122,10 @@ describe("applyOverrides", () => {
       ["no_match", null, "OVERRIDE"],
     ]);
     expect(result.report.decisions[0]?.note).toBe("override: confirmed by lead");
+    expect(result.overridden.map((o) => [o.acmeId, o.matcher.status, o.matcher.reason])).toEqual([
+      ["1556.1002", "needs_review", "AMBIGUOUS"],
+      ["1556.1003", "needs_review", "AMBIGUOUS"],
+    ]);
     expect(result.report.decisions[0]?.candidates.length).toBeGreaterThan(0);
     expect(result.report.counts).toEqual({ matched: 1, needs_review: 0, no_match: 1 });
     expect(result.report.unmatchedPulley.map((p) => p.id)).toEqual(["prj_b"]);

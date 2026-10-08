@@ -104,6 +104,12 @@ export interface Candidate {
   readonly pulleyName: string;
   readonly pulleyStatus: string;
   readonly pulleyType: string;
+  readonly pulleyCity: string;
+  readonly pulleyStreet: string | null;
+  /** Milestones on the Pulley side, e.g. "cs 2027-01-19, ps 2026-08-20". */
+  readonly pulleyDates: string;
+  /** Compact human reading of the evidence, e.g. "store, same type, same dates, city". */
+  readonly evidenceSummary: string;
   readonly tier: Tier;
   readonly evidence: Evidence;
   /** Higher is better within a tier. Deterministic; ties are real ties. */
@@ -116,6 +122,10 @@ export interface MatchDecision {
   readonly acmeStatus: string;
   readonly acmeType: string;
   readonly programYear: number;
+  readonly acmeCity: string;
+  readonly acmeStreet: string;
+  /** Milestones on the Acme side, same format as `Candidate.pulleyDates`. */
+  readonly acmeDates: string;
   readonly status: OutputStatus;
   readonly pulleyId: string | null;
   readonly reason: ReasonCode;

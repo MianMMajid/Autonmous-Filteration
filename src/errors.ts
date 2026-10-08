@@ -16,6 +16,8 @@ export const ExitCode = {
   Schema: 5,
   Locked: 6,
   Io: 7,
+  Quality: 8,
+  Stale: 9,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -78,6 +80,20 @@ export class LockedError extends SyncError {
 export class IoError extends SyncError {
   constructor(message: string, options?: SyncErrorOptions) {
     super(message, ExitCode.Io, options);
+  }
+}
+
+/** Inputs are schema-valid but semantically suspect (empty export, collapse versus the previous run). */
+export class QualityError extends SyncError {
+  constructor(message: string, options?: SyncErrorOptions) {
+    super(message, ExitCode.Quality, options);
+  }
+}
+
+/** The last published result is older than the allowed age, or there is none. */
+export class StaleError extends SyncError {
+  constructor(message: string, options?: SyncErrorOptions) {
+    super(message, ExitCode.Stale, options);
   }
 }
 

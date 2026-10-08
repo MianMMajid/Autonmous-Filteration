@@ -17,6 +17,7 @@ describe("loadConfig", () => {
     expect(config.logLevel).toBe("warn");
     expect(config.dataDir).toBe("./data");
     expect(config.retainRuns).toBe(60);
+    expect(config.overridesFile).toBe("./overrides.csv");
   });
 
   it("strips trailing slashes from base URLs", () => {
