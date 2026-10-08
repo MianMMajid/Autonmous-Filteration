@@ -177,7 +177,12 @@ function pairConflict(acme: AcmeProject, pulley: PulleyRecord, automatic: boolea
     return "Project types do not describe compatible work";
   if (pulley.parsedName.years.some((year) => year !== acme.programYear))
     return "Pulley name contains a conflicting program year";
-  if (!automatic) return null;
+  return automatic ? softPairConflict(acme, pulley) : null;
+}
+
+function softPairConflict(acme: AcmeProject, pulley: PulleyRecord): string | null {
+  if (acme.parsedName.signageScopeHint || pulley.parsedName.signageScopeHint)
+    return "Mixed remodel and sign scope needs confirmation; verify which work this permit covers";
   if (temporalVerdict(acme, pulley) === Temporal.Conflict)
     return "Project date evidence conflicts; confirm the permit's program year";
   const distant = milestoneGaps(acme, pulley).filter((gap) => gap.days > 180);
@@ -231,6 +236,8 @@ function competingBuilding(
   if (
     storeMatches(acme, pulley) &&
     storeMatches(other, pulley) &&
+    !(namesProject(acme, pulley) && !namesProject(other, pulley)) &&
+    !(other.site && cityMatches(acme, pulley) && !cityMatches(other, pulley)) &&
     (!pulley.streetKey ||
       pulley.streetKey !== acme.site?.streetKey ||
       pulley.streetKey === other.site?.streetKey)

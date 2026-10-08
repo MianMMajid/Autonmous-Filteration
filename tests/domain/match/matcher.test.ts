@@ -466,7 +466,7 @@ describe("matchProjects: audit cases", () => {
       ),
     );
     expect(report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual([
-      ["4980.1001", "no_match", null],
+      ["4980.1001", "needs_review", null],
       ["1912.1001", "needs_review", null],
     ]);
   });

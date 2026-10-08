@@ -54,8 +54,8 @@ function headerSection(s: SummaryInput): string[] {
   const total = s.report.decisions.length;
   const pct = (n: number): string => (total === 0 ? "0.0" : ((100 * n) / total).toFixed(1));
   const pathfinder = s.normalized.pulley.filter((p) => p.isPathfinder).length;
-  const signage = s.normalized.pulley.filter((p) => p.isSignage).length;
-  const pool = s.normalized.pulley.length - pathfinder - signage;
+  const signage = s.normalized.pulley.filter((p) => !p.isPathfinder && p.isSignage).length;
+  const pool = s.normalized.pulley.length - pathfinder;
   const reasons = Object.entries(s.report.reasons)
     .sort(([, a], [, b]) => b - a)
     .map(([reason, n]) => `${reason} ${n}`)
@@ -64,7 +64,7 @@ function headerSection(s: SummaryInput): string[] {
     `SiteLedger sync run ${s.runId} (${s.source === "live" ? "live data" : "replayed archive"})`,
     "",
     `Inputs: ${s.normalized.acme.length} Acme projects, ${s.normalized.sites.length} sites, ` +
-      `${s.normalized.pulley.length} Pulley projects (${pool} candidates after excluding ${pathfinder} pathfinder and ${signage} signage)`,
+      `${s.normalized.pulley.length} Pulley projects (${pool} candidates after excluding ${pathfinder} pathfinder; ${signage} signage eligible only for Acme signage)`,
     `Results: matched ${s.report.counts.matched} (${pct(s.report.counts.matched)}%), ` +
       `needs_review ${s.report.counts.needs_review}, no_match ${s.report.counts.no_match}`,
     `By reason: ${reasons}`,
@@ -164,7 +164,7 @@ function overridesSection(o: SummaryInput["overrides"]): string[] {
   if (o.applied === 0 && o.problems.length === 0) return [];
   return [
     `Overrides: ${o.applied} applied from ${o.path}` +
-      (o.problems.length > 0 ? `, ${o.problems.length} could not be applied:` : ""),
+      (o.problems.length > 0 ? `, ${o.problems.length} warning(s) or problem(s):` : ""),
     ...o.problems.map((problem) => `  ${problem}`),
   ];
 }

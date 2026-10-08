@@ -111,7 +111,7 @@ export function pulley(overrides: PulleyOverrides = {}): PulleyRecord {
     isPathfinder: accountPlan === "pathfinder",
     status: overrides.status ?? "In Progress",
     projectType,
-    isSignage: projectType === "Signage",
+    isSignage: projectType.trim().toLowerCase() === "signage",
     jurisdictionCity: overrides.jurisdictionCity ?? "Reno",
     state: overrides.state ?? "NV",
     streetAddress: street,

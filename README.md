@@ -54,7 +54,10 @@ The `status` column is one of `matched`, `needs_review`, or `no_match`.
 | 9 | Stale | From `pnpm cli status`: nothing published, or the result or its source data is older than the limit |
 | 10 | Tool defect | The result broke a hard rule; nothing was published. Contact engineering |
 
-A failed run never overwrites the previous good output.
+A failed run never overwrites the previous good output. A disappearing previously
+recorded overrides file blocks sync; use a valid header-only file to intentionally
+clear decisions. Unset data/override paths are rooted in this project; explicit
+relative paths use the current working directory consistently with preflight.
 
 **Is the result current?** `pnpm cli status --max-age-hours 24` says when
 the last result was published and whether it is older than a day.

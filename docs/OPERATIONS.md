@@ -125,7 +125,7 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `IDENTITY_DISPUTED` | Acme's own source rows for this project or its site contradict each other; it would have matched, but contradictory evidence never raises confidence |
 | `WEAK_EVIDENCE` | Same street name or same city only |
 | `UNRELATED_ONLY` | Projects at the store exist but are another line or another year |
-| `EXCLUDED_ONLY` | Only a pathfinder or signage project references it |
+| `EXCLUDED_ONLY` | Only Pathfinder or a project across the signage/general-work boundary references it |
 | `NO_CANDIDATE` | Nothing relates |
 | `OVERRIDE` | A human decision from `overrides.csv` |
 
@@ -156,7 +156,8 @@ decisions when evidence is still valid. Hard source contradictions require sourc
 correction; explained human decisions can resolve soft street/date discrepancies.
 Conflicting duplicate override rows stop publication; remove the conflict rather
 than choosing by CSV row order. Identical duplicates collapse with a warning.
-Decision dates, when supplied, must be real ISO dates or UTC timestamps.
+Decision dates, when supplied, must be real ISO dates or timestamps with `Z` or an explicit UTC offset (for example
+`2026-10-08T12:30:00+02:00`); zoneless timestamps are rejected.
 
 ## Status differences
 
@@ -244,3 +245,25 @@ historical copy, not the file to edit for the next live run.
 Run retention does not delete `.partial` crash evidence or backup snapshots.
 See the storage lifecycle procedure in `DEPLOYMENT.md`; these need an operator
 policy and capacity monitoring on the deployment volume.
+
+
+### Paths and missing override inputs
+
+When unset, `DATA_DIR` and `OVERRIDES_FILE` default to the project root's `data/`
+and `overrides.csv` regardless of the shell's working directory. Explicit relative
+values resolve against the working directory in both CLI and preflight; production
+should use absolute paths. Node's `--env-file-if-exists=.env` still resolves that
+file relative to the shell, so use an absolute env-file path when invoking Node
+from another directory.
+
+A missing override file on bootstrap emits a warning in logs, summary and the run
+record; it is no longer silent. If the last publication recorded an override file
+and it disappears, sync fails before acquisition with exit 5 and preserves the
+publication. Restore the reviewed file or intentionally provide a valid header-only
+file to withdraw all decisions. An empty/whitespace-only, mis-headed or duplicate-
+column file fails validation even when there are no data rows. The valid empty
+file is:
+
+```csv
+acme_project_id,pulley_project_id,status,note,author,decided_at
+```

@@ -10,6 +10,7 @@ import {
   namesProject,
   StatusVerdict,
   sequenceRelation,
+  signageScopeCompatible,
   statusDrift,
   statusesAgree,
   statusVerdict,
@@ -39,7 +40,7 @@ import {
  * docs/adr/0004 for why ambiguity never becomes a guess.
  *
  * For each Acme project:
- *   pool   = Pulley projects that are not pathfinder, not signage, same banner, same state
+ *   pool   = Pulley projects that are not Pathfinder, same signage scope, same banner and state
  *   tier 1 = pool entries whose name carries the full Acme id
  *   tier 2 = pool entries whose name carries the store number (current or former)
  *   tier 3 = no store in the name, but the sequence plus city identify this Acme project uniquely
@@ -57,13 +58,14 @@ import {
  * Bump when a rule, weight, or tier changes. Recorded in run.json so a
  * historical decision can be attributed to the rules that produced it.
  */
-export const RULES_VERSION = "2026-10-08.10";
+export const RULES_VERSION = "2026-10-08.12";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
-    .filter((p) => !p.isPathfinder && !p.isSignage)
+    .filter((p) => !p.isPathfinder)
     .sort((a, b) => a.id.localeCompare(b.id));
-  const excluded = inputs.pulley.filter((p) => p.isPathfinder || p.isSignage);
+  // Exclusion is pair-specific: signage is eligible only for Acme signage.
+  const excluded = inputs.pulley;
   const registerIds = knownAcmeIds(inputs.acme);
   const context: Context = {
     pool,
@@ -210,8 +212,7 @@ function knownAcmeIds(register: readonly AcmeProject[]): Set<string> {
   const ids = new Set<string>();
   for (const acme of register) {
     ids.add(acme.id);
-    const former = acme.site?.formerLocationNumber;
-    if (former !== null && former !== undefined) ids.add(`${former}.${acme.sequence}`);
+    for (const store of acmeStoreNumbers(acme)) ids.add(`${store}.${acme.sequence}`);
   }
   return ids;
 }
@@ -283,9 +284,7 @@ function decideFromEvidence(acme: AcmeProject, context: Context): MatchDecision 
   const state = acmeState(acme);
   const sameYear = (p: PulleyRecord): boolean => temporalVerdict(acme, p) !== Temporal.Conflict;
 
-  const exact = context.safety
-    .exactCandidates(acme)
-    .filter((p) => isExactIdCandidate(acme, p, context.sharedNumbers));
+  const exact = context.safety.exactCandidates(acme);
   if (exact.length > 0)
     return strongDecision(
       acme,
@@ -338,7 +337,9 @@ function decideFromEvidence(acme: AcmeProject, context: Context): MatchDecision 
 
   // The exact id on a project of the other banner or state is most likely a
   // data-entry error in Pulley; a human should see it rather than "no match".
-  const outside = context.pool.filter((p) => namesProject(acme, p) && !scoped.includes(p));
+  const outside = context.pool.filter(
+    (p) => namesProject(acme, p) && signageScopeCompatible(acme, p) && !scoped.includes(p),
+  );
   if (outside.length > 0) {
     const where = outside
       .map((p) => `${p.id} is ${p.banner ?? p.organization} in ${p.state}`)
@@ -364,29 +365,6 @@ function decideFromEvidence(acme: AcmeProject, context: Context): MatchDecision 
     return weakDecision(acme, rank(weak.map((p) => toCandidate(acme, p, Tier.Locality))));
   }
   return noCandidate(acme, context.excluded);
-}
-
-/**
- * The full Acme id in the name. When that id's store number also identifies
- * another building (a former number reused as a current one), the name alone
- * cannot say which building it means, so the locality must agree too.
- */
-function isExactIdCandidate(
-  acme: AcmeProject,
-  pulley: PulleyRecord,
-  sharedNumbers: ReadonlySet<string>,
-): boolean {
-  if (!namesProject(acme, pulley)) return false;
-  const namedStores = acmeStoreNumbers(acme).filter((store) =>
-    pulley.parsedName.fullIds.includes(`${store}.${acme.sequence}`),
-  );
-  if (
-    namedStores.every(
-      (store) => !sharedNumbers.has(collisionKey(acme.banner, acmeState(acme), store)),
-    )
-  )
-    return true;
-  return localityAgrees(acme, pulley);
 }
 
 function localityAgrees(acme: AcmeProject, pulley: PulleyRecord): boolean {
@@ -726,17 +704,24 @@ function weakDecision(acme: AcmeProject, candidates: readonly Candidate[]): Matc
 }
 
 function noCandidate(acme: AcmeProject, excluded: readonly PulleyRecord[]): MatchDecision {
-  const onlyExcluded = excluded.filter((p) => namesProject(acme, p) || storeMatches(acme, p));
+  const onlyExcluded = excluded.filter(
+    (p) =>
+      (p.isPathfinder || !signageScopeCompatible(acme, p)) &&
+      (namesProject(acme, p) || storeMatches(acme, p)),
+  );
   if (onlyExcluded.length > 0) {
     const what = onlyExcluded
-      .map((p) => `${p.id} (${p.isPathfinder ? "pathfinder" : "signage"})`)
+      .map(
+        (p) =>
+          `${p.id} (${p.isPathfinder ? "pathfinder" : p.isSignage ? "signage" : "non-signage"})`,
+      )
       .join(", ");
     return {
       ...base(acme, [], null),
       status: OutputStatus.NoMatch,
       pulleyId: null,
       reason: ReasonCode.ExcludedOnly,
-      note: `only ${what} reference this project; excluded by the brief`,
+      note: `only ${what} reference this project; Pathfinder is excluded and signage must match signage`,
     };
   }
   return {

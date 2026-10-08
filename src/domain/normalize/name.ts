@@ -36,6 +36,8 @@ export interface ParsedName {
   readonly markers: readonly string[];
   readonly canceledMarker: boolean;
   readonly signageHint: boolean;
+  /** Mixed work scope needs review, not a hard signage-only classification. */
+  readonly signageScopeHint: boolean;
   /** `store.sequence` ids, in order of appearance, deduplicated. */
   readonly fullIds: readonly string[];
   /** Store numbers, including those inside full ids. */
@@ -56,7 +58,7 @@ const SEQUENCE_WORD = /\b(?:SEQ|SEQUENCE|PROJ|PROJECT)\s*#?\s*(\d{4})\b/g;
 const TRAILING_PAREN_SEQUENCE = /\((\d{4})\)\s*$/;
 const FOUR_DIGITS = /\b(\d{4})\b/g;
 const STORE_MARKER_BEFORE =
-  /(?:#|\bSTORE\b|\bCLUB\b|\bAM-|\bACME\b(?:\s+(?:WC|MKT|MARKET|WAREHOUSE CLUB))?\s*\|?|\|)\s*#?\s*$/;
+  /(?:#|\bSTORE\b|\bCLUB\b|\bAM-|\bACME\b(?:\s+(?:WC|MKT|MARKET|WAREHOUSE CLUB))?\s*[-|:]?|\|)\s*#?\s*$/;
 // Same supported program-year range as the register schema. Bare numbers
 // in this range are ambiguous years, never proof of a building identity.
 const YEAR_MIN = 2000;
@@ -79,17 +81,17 @@ export function parseProjectName(raw: string): ParsedName {
     }
   }
   extractSequences(upper, facts);
+  claimStreetNumbers(upper, facts);
   classifyRemainingNumbers(upper, facts);
+  const signage = signageEvidence(upper, markers);
 
   return {
     raw,
     text,
     markers,
     canceledMarker,
-    signageHint:
-      /\bSIGNAGE\b|\b(?:SIGN|SIGNS)\s+(?:PERMIT|PACKAGE|INSTALLATION|REPLACEMENT|REMODEL)\b|\b(?:MONUMENT|PYLON|EXTERIOR|WALL)\s+SIGNS?\b/.test(
-        upper,
-      ) || markers.some((marker) => /^(?:sign|signs)$/i.test(marker.trim())),
+    signageHint: signage.hard,
+    signageScopeHint: signage.scope,
     fullIds: facts.fullIds,
     storeNumbers: facts.storeNumbers,
     sequences: facts.sequences,
@@ -97,6 +99,40 @@ export function parseProjectName(raw: string): ParsedName {
     canonical,
     cityState: parseCityState(text),
   };
+}
+
+function signageEvidence(
+  upper: string,
+  markers: readonly string[],
+): { hard: boolean; scope: boolean } {
+  const marker = markers.some((value) => /^(?:signage|sign|signs)$/i.test(value.trim()));
+  const words =
+    /\bSIGNAGE\b|\bSIGNS?\s+(?:PERMIT|PACKAGE|INSTALLATION|REPLACEMENT|REMODEL)\b|\b(?:MONUMENT|PYLON|EXTERIOR|WALL)\s+SIGNS?\b/.test(
+      upper,
+    );
+  const mixed =
+    /\b(?:REMODEL|EXPANSION|NEW BUILD|RM|EX|NB)\b/.test(upper) &&
+    /[+&]|\b(?:WITH|INCLUDING|INCLUDES|AND)\b/.test(upper);
+  const dedicated =
+    marker ||
+    /\b(?:ONLY|SEPARATE|DEDICATED)\s+(?:SIGNAGE|SIGNS?)\b|\b(?:SIGNAGE|SIGNS?)\s+(?:ONLY|PERMIT|PACKAGE)\b/.test(
+      upper,
+    );
+  const scope = words && mixed && !dedicated;
+  return { hard: marker || (words && !scope), scope };
+}
+
+/** House numbers embedded in a recognizable street address are neither years nor stores. */
+function claimStreetNumbers(upper: string, facts: Facts): void {
+  const street =
+    /\b\d{1,6}[A-Z]?\s+(?:(?:[A-Z][A-Z'.-]*|\d+(?:ST|ND|RD|TH))\s+){1,5}(?:STREET|ST|ROAD|RD|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|LANE|LN|WAY|COURT|CT|PARKWAY|PKWY|PIKE|PLACE|PL|TRAIL|TRL)\b/g;
+  const route =
+    /\b\d{1,6}[A-Z]?\s+(?:(?:US|STATE|COUNTY)\s+)?(?:HIGHWAY|HWY|ROUTE|RTE)\s+\d+[A-Z]?\b/g;
+  for (const match of [...upper.matchAll(street), ...upper.matchAll(route)]) {
+    if (facts.isClaimed(match.index)) continue;
+    if (STORE_MARKER_BEFORE.test(upper.slice(Math.max(0, match.index - 64), match.index))) continue;
+    facts.claim(match.index, match[0].length);
+  }
 }
 
 /** Accumulates extracted facts and the character ranges already explained by a stronger pattern. */
@@ -161,7 +197,7 @@ function classifyRemainingNumbers(upper: string, facts: Facts): void {
   for (const match of upper.matchAll(FOUR_DIGITS)) {
     if (facts.isClaimed(match.index)) continue;
     const value = Number(match[1]);
-    const before = upper.slice(Math.max(0, match.index - 24), match.index);
+    const before = upper.slice(Math.max(0, match.index - 64), match.index);
     const marked = STORE_MARKER_BEFORE.test(before);
     if (!marked && value >= YEAR_MIN && value <= YEAR_MAX) facts.addYear(value);
     else facts.addStore(value);

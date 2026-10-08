@@ -1,5 +1,6 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig, PROJECT_ROOT } from "../src/config.ts";
 import { ConfigError, ExitCode } from "../src/errors.ts";
 
 const validEnv = {
@@ -15,9 +16,9 @@ describe("loadConfig", () => {
     expect(config.siteLedger.baseUrl).toBe("https://pulley-siteledger.vercel.app");
     expect(config.pulley.apiKey).toBe("pk_test");
     expect(config.logLevel).toBe("warn");
-    expect(config.dataDir).toBe("./data");
+    expect(config.dataDir).toBe(resolve(PROJECT_ROOT, "data"));
     expect(config.retainRuns).toBe(60);
-    expect(config.overridesFile).toBe("./overrides.csv");
+    expect(config.overridesFile).toBe(resolve(PROJECT_ROOT, "overrides.csv"));
   });
 
   it("strips trailing slashes from base URLs", () => {

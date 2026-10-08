@@ -33,7 +33,7 @@ describe("address spelling recovery without erasing identity", () => {
   });
   it.each([
     ["100 NORTH STREET", "100 N STREET"],
-    ["100 CENTER STREET", "100 CTR STREET"],
+    ["100 CENTRAL STREET", "100 CTR STREET"],
     ["100 HIGHWAY DRIVE", "100 HWY DRIVE"],
     ["100 NORTH MAIN", "100 SOUTH MAIN"],
     ["100 MAIN SOUTHWEST", "100 MAIN SOUTHEAST"],

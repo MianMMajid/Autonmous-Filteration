@@ -98,7 +98,7 @@ const PLACEHOLDERS: ReadonlySet<string> = new Set([
 const UNIT_PATTERN =
   /\b(?:SUITE|STE|UNIT|APT|APARTMENT|FLOOR|FL|ROOM|RM|SPACE|SPC|DEPT)\b\.?\s*#?\s*[A-Z0-9-]+/g;
 const HASH_UNIT_PATTERN = /#\s*[A-Z0-9-]+/g;
-const BUILDING_PATTERN = /\b(?:BLDG|BUILDING)\b\.?\s*#?\s*([A-Z0-9-]+)/g;
+const BUILDING_PATTERN = /\b(?:BLDG|BUILDING)\b\.?[\s:-]*#?\s*([A-Z0-9]+(?:-[A-Z0-9]+)*)/g;
 
 /**
  * Build a comparison key for a street address, or null when there is nothing
@@ -157,10 +157,9 @@ function normalizeCompoundNames(tokens: string[], suffix: number | null): void {
     // Numbered routes use a prefix, rather than a final street suffix.
     if (["HIGHWAY", "ROUTE"].includes(token) && HOUSE_NUMBER.test(tokens[i + 1] ?? ""))
       tokens[i] = SUFFIXES[token] ?? token;
-    // Town Center Blvd is commonly abbreviated Town Ctr Blvd. Preserve a
-    // sole proper name such as Center Street and all other internal words.
-    if (suffix !== null && i > 1 && i < suffix && ["CENTER", "CENTRE"].includes(token))
-      tokens[i] = "CTR";
+    // Center/Centre/Ctr is an explicit spelling alias, including Center Blvd.
+    // Other internal proper-name words (especially directionals) are preserved.
+    if (suffix !== null && i < suffix && ["CENTER", "CENTRE"].includes(token)) tokens[i] = "CTR";
   }
 }
 
@@ -191,7 +190,9 @@ function dropVenuePrefix(text: string): string {
   if (index <= 0) return text;
   const buildings = segments
     .slice(0, index)
-    .filter((segment) => /^\s*(?:BLDG|BUILDING)\.?\s*#?\s*[A-Z0-9-]+\s*$/.test(segment));
+    .filter((segment) =>
+      /^\s*(?:BLDG|BUILDING)\.?[\s:-]*#?\s*[A-Z0-9]+(?:-[A-Z0-9]+)*\s*$/.test(segment),
+    );
   return [...segments.slice(index), ...buildings].join(",");
 }
 

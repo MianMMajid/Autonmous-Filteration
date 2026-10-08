@@ -1,5 +1,34 @@
 # Changelog
 
+## Dedicated signage — 2026-10-08 (rules 2026-10-08.12)
+
+- Allow dedicated Signage-to-Signage matching through all existing evidence tiers;
+  keep general work separate across automatic decisions, overrides and publication.
+- Include signage in candidate indexes and unclaimed-project reporting; preserve
+  Pathfinder exclusion and correct overlapping Pathfinder/signage summary counts.
+- Recognize Signage in incoming Acme vocabulary and retain source contradictions,
+  explained soft-conflict reviews, ambiguity and lifecycle safeguards.
+- Add signage regression tests and a synthetic XLS/XLSX/CSV/API end-to-end run,
+  including replay and override revalidation after upstream scope changes.
+- Current archived mapping remains byte-identical at 324 matched, 26 review,
+  50 no-match. No Acme signage rows are present in that snapshot.
+
+## Review round 7 — 2026-10-08 (rules 2026-10-08.11)
+
+- Recognize punctuated store prefixes in the year range and ignore embedded house
+  numbers; retain genuine program-year conflicts.
+- Route mixed remodel/sign scope to explained human review while preserving
+  dedicated-signage boundaries.
+- Respect unique composite-ID and city evidence despite stale former-number
+  collisions; retain hard full-ID/address conflicts and complete alias diagnostics.
+- Normalize Center/Ctr and hyphen-separated building designators without merging
+  distinct buildings.
+- Warn on missing bootstrap override inputs and block disappearance after a file
+  was recorded. Validate empty-file headers and permit ISO UTC-offset timestamps.
+- Make default paths stable and explicit relative paths consistent between CLI
+  and preflight, with ordinary configuration errors reported cleanly.
+- Archived mapping remains byte-identical at 324 matched, 26 review, 50 no-match.
+
 ## Review round 6 — 2026-10-08 (rules 2026-10-08.10)
 
 - Restore bounded common address aliases and discard venue-only building text

@@ -1,6 +1,6 @@
 # Validation
 
-Current rules are **2026-10-08.10**. See [the latest review fixes](REVIEW_ROUND_6.md)
+Current rules are **2026-10-08.12**. See [dedicated-signage validation](SIGNAGE_VALIDATION.md), [the latest review fixes](REVIEW_ROUND_7.md)
 and [the prior readiness evidence](READINESS_COMPLETION.md)
 and [the 50-case source-record review](validation/2026-10-08-record-review.md).
 Sections below retain historical tuning observations; they are not independent

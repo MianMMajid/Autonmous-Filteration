@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { ConfigError } from "./errors.ts";
 
@@ -13,6 +15,7 @@ const LOG_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 const DEFAULT_BASE_URL = "https://pulley-siteledger.vercel.app";
+export const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 /** A non-empty string whose absence is reported as "required" rather than a type error. */
 function required(name: string): z.ZodString {
@@ -23,9 +26,19 @@ function required(name: string): z.ZodString {
 /** Settings a local command (status, replay) needs; no credentials. */
 const localSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default("warn"),
-  DATA_DIR: z.string().trim().min(1).default("./data"),
+  DATA_DIR: z
+    .string()
+    .trim()
+    .min(1)
+    .default(resolve(PROJECT_ROOT, "data"))
+    .transform((path) => resolve(path)),
   RETAIN_RUNS: z.coerce.number().int().min(1).default(60),
-  OVERRIDES_FILE: z.string().trim().min(1).default("./overrides.csv"),
+  OVERRIDES_FILE: z
+    .string()
+    .trim()
+    .min(1)
+    .default(resolve(PROJECT_ROOT, "overrides.csv"))
+    .transform((path) => resolve(path)),
 });
 
 const endpoint = z.url().refine((value) => {

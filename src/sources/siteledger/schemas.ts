@@ -9,7 +9,7 @@ import { z } from "zod";
  * the sync. See docs/ARCHITECTURE.md, "Boundaries and validation".
  */
 
-// ---------- Known vocabularies (observed 2026-10-08) ----------
+// ---------- Known vocabularies (observed 2026-10-08 plus supported signage) ----------
 
 export const ACME_STATUSES = ["Active", "Deferred", "Closed"] as const;
 export const ACME_BANNERS = ["Acme Market", "Acme Warehouse Club"] as const;
@@ -21,6 +21,7 @@ export const ACME_PROJECT_TYPES = [
   "Expansion",
   "Deli Remodel",
   "New Build",
+  "Signage",
 ] as const;
 
 // ---------- Cell-level helpers ----------

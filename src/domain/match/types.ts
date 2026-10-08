@@ -47,7 +47,7 @@ export const ReasonCode = {
   NoCandidate: "NO_CANDIDATE",
   /** Projects at this store exist, but each is explicitly another line (different sequence or year) of another type. */
   UnrelatedOnly: "UNRELATED_ONLY",
-  /** The only project carrying this id or store is pathfinder or signage, which the brief excludes. */
+  /** Only Pathfinder or projects across the signage/general-work boundary reference this id or store. */
   ExcludedOnly: "EXCLUDED_ONLY",
   /** A human decision recorded in overrides.csv replaced the matcher's decision. */
   Override: "OVERRIDE",

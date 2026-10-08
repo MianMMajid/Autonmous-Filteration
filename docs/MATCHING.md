@@ -23,7 +23,7 @@ For an Acme project, candidates are Pulley projects where all of the following
 hold:
 
 - `account_plan` is not `pathfinder` (brief: skip Pathfinder)
-- `project_type` is not `Signage` (brief: signage is Pulley-only)
+- dedicated `Signage` matches only dedicated `Signage`; general work cannot use a signage permit
 - banner matches (brief: Warehouse Club numbering is separate)
 - state matches (brief: state is reliable)
 
@@ -88,7 +88,7 @@ Address keys retain building designators in both prefix and suffix forms. Street
 suffixes and directionals are normalized by position; words inside the street's
 proper name are preserved (North Street is not silently equated with N Street).
 
-**Safety gate (rules 2026-10-08.10).** Ranking is not sufficient for acceptance.
+**Safety gate (rules 2026-10-08.11).** Ranking is not sufficient for acceptance.
 `domain/match/safety.ts` is used by the matcher, overrides, and publication:
 
 - Exact IDs do not bypass temporal contradictions. Explicit year conflicts,
@@ -107,8 +107,10 @@ proper name are preserved (North Street is not silently equated with N Street).
 - A different street name, an exact address identifying another registered
   building, or competing building evidence from dates blocks acceptance.
   A house-number typo alone is not proof of a different building. A shared
-  current/former store number needs a unique exact address to establish the
-  building when compatible registered projects compete.
+  current/former store number can be resolved by a unique full composite ID, a
+  uniquely agreeing city, or a unique exact address. A second owner of the same
+  full ID or an exact address pointing to another site remains a hard conflict.
+  A stale former number with a different sequence cannot overrule an explicit ID.
 - Explicit full IDs (including known former-number aliases) remain evidence
   of ownership even if that owner's match is withheld or another candidate
   wins for it. A conflicting site/year cannot inherit the permit silently.
@@ -188,7 +190,7 @@ the year written in the name:
 | Statuses agree (status gate) | +20 |
 
 Weights only order plausible candidates; hard exclusions (banner, state,
-pathfinder, signage, contradicting store or sequence, temporal conflict)
+pathfinder, crossing the signage/general-work boundary, contradicting store or sequence, temporal conflict)
 never reach scoring. Status agreement outranks every soft signal so a live
 duplicate beats a canceled one, but never outranks an exact id or exact
 dates.
@@ -211,7 +213,7 @@ dates.
 | Exact id found only on the other banner or state | `needs_review` (`ID_OUTSIDE_SCOPE`) |
 | Same Pulley project claimed from another program year without strong evidence | `needs_review` (`YEAR_CONFLICT`) |
 | Only tier 6 evidence | `needs_review` (`WEAK_EVIDENCE`) |
-| Only pathfinder or signage projects reference the id or store | `no_match` (`EXCLUDED_ONLY`) |
+| Only Pathfinder or projects across the signage/general-work boundary reference the id or store | `no_match` (`EXCLUDED_ONLY`) |
 | Nothing at all | `no_match` (`NO_CANDIDATE`) |
 
 ## Input quality and publication
@@ -310,7 +312,8 @@ for historical tuning and the remaining independent-validation requirement.
 Rules .10 restore 3229.1005 because its siblings cannot own its dedicated EV
 permit; 2970.1008 still has a compatible competing owner and remains in review.
 A verified former full ID moves one existing match from tier 2 to tier 1 without
-changing its target. The published .9 snapshot is unchanged by this offline audit. Counts come from `tests/domain/match/matcher.test.ts`
+changing its target. These are also the rules .11 counts: its replay is byte-identical to the
+published .10 mapping at `2026-10-08T20-23-30-750Z`. Counts come from `tests/domain/match/matcher.test.ts`
 running the matcher over the archived fixtures; they will drift as the data
 changes.
 
@@ -340,7 +343,7 @@ changes.
 - Key Dates mixes two date formats: 1146 cells `MM/DD/YYYY`, 223 cells
   `YYYY-MM-DD`, 631 blank. Pulley dates are always ISO.
 
-## Review follow-up — rules 2026-10-08.10
+## Review follow-up — rules 2026-10-08.10–.11
 
 Full IDs using a verified former store number receive exact-ID evidence and
 can anchor ownership like current-number IDs. Reused-number collisions still
@@ -350,8 +353,56 @@ codes and mismatched structured banners remain blocked on either side.
 
 Address normalization also handles Town Center/Ctr before a street suffix,
 numbered Highway/Hwy and Route/Rte prefixes, and directionals on suffixless
-streets. A sole street name such as North Street or Center Street is preserved.
+streets. North Street is preserved as a proper name; Center/Centre/Ctr is an explicit
+spelling alias even in Center Boulevard.
 Venue text is discarded before extracting building designators; a standalone
 `Building 3,` prefix is retained, while `Acme Building 3,` is venue text.
 Explicit building designators in the actual street address remain part of its
 identity. This is a conservative string normalizer, not a geocoder.
+
+
+## Contextual evidence — rules 2026-10-08.11
+
+A brand prefix followed by punctuation still marks a store: `Acme Market - 2043`
+is store 2043, not a program year. Bare numbers in 2000–2100 without a store
+marker remain year evidence. Recognizable embedded street addresses (including
+numbered highways/routes) claim their house numbers before numeric classification;
+`1556.1001 – 2050 Main St` does not assert year 2050 or another store. Explicit
+program years outside that address span still apply.
+
+A mixed scope such as `Remodel + exterior signs` is a soft confirmation request:
+automatic matching holds it, but an explained human decision can verify the
+permit's scope. Explicit signage markers, separate/signage-only wording and sign
+permit/package labels remain hard exclusions or source-type contradictions.
+Signage projects are never silently folded into general permits.
+
+All verified ID aliases (register, current site number and former site number)
+are used both for matching and the “not in register” diagnostic. Building keys
+normalize `BLDG-3` to `BLDG 3` while preserving distinct IDs and internal hyphens
+such as `A-3`.
+
+
+## Dedicated signage — rules 2026-10-08.12
+
+The brief separates signage from general permits; it does not exclude signage
+altogether. Acme and Pulley rows whose structured type is `Signage` can match
+through the existing evidence tiers. Type comparison ignores case and surrounding
+whitespace. Unknown labels such as `Signs` are not silently interpreted as Signage.
+
+The pair-specific scope rule is shared by candidate selection, reverse ownership
+checks, overrides and publication invariants. Neither direction of a signage /
+general-work assignment is allowed, even with a full ID or a human override.
+Pathfinder, banner, state, lifecycle, building and year safeguards still apply.
+Source name/type contradictions remain holds; mixed remodel/sign descriptions
+retain the existing explained-review path. Ties and insufficient evidence remain
+review cases rather than guesses.
+
+Unclaimed non-Pathfinder signage projects now appear in `pulley-unmatched.csv`,
+including when the register has no signage rows. They are not automatically added
+to the Acme review backlog. The summary counts signage within the non-Pathfinder
+pool and explains that it is eligible only for Acme signage. A project flagged as
+both Pathfinder and Signage is excluded once, not subtracted twice.
+
+The current 400-row snapshot has zero Acme signage rows. Its mapping remains
+byte-identical at 324 matched / 26 review / 50 no-match. The dedicated-signage
+workflow is exercised with synthetic source files; see [validation](SIGNAGE_VALIDATION.md).

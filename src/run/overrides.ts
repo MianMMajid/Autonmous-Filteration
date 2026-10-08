@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parse as parseCsv } from "csv-parse/sync";
 import { z } from "zod";
-import { acmeState, isInScope, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
+import {
+  acmeState,
+  isInScope,
+  StatusVerdict,
+  signageScopeCompatible,
+  statusVerdict,
+} from "../domain/match/compat.ts";
 import { matchSafetyIssue } from "../domain/match/safety.ts";
 import { createSafetyIndex, type SafetyIndex } from "../domain/match/safety-index.ts";
 import type { MatchDecision, MatchReport, OutputStatus } from "../domain/match/types.ts";
@@ -48,14 +54,20 @@ export interface LoadedOverrides {
   readonly source: { readonly path: string; readonly sha256: string | null; readonly rows: number };
 }
 
-/** Read and validate the overrides file. A missing file is an empty list. */
+/** Missing bootstrap files are visible warnings; disappearance after publication is blocked by sync. */
 export async function loadOverrides(path: string): Promise<LoadedOverrides> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
     if (isErrno(error, "ENOENT")) {
-      return { overrides: [], problems: [], source: { path, sha256: null, rows: 0 } };
+      return {
+        overrides: [],
+        problems: [
+          `Overrides file ${path} is missing; no human decisions loaded. Create a valid header-only file if intentional.`,
+        ],
+        source: { path, sha256: null, rows: 0 },
+      };
     }
     throw new SchemaError(`Could not read ${path}`, { cause: error });
   }
@@ -76,10 +88,14 @@ export function parseOverrides(
   source = OVERRIDES_FILENAME,
 ): Pick<LoadedOverrides, "overrides" | "problems"> {
   let rows: Record<string, string>[];
+  let header: string[] = [];
   try {
     rows = parseCsv(text, {
       bom: true,
-      columns: true,
+      columns: (columns: string[]) => {
+        header = columns;
+        return columns;
+      },
       skip_empty_lines: true,
       trim: true,
     }) as Record<string, string>[];
@@ -87,14 +103,13 @@ export function parseOverrides(
     throw new SchemaError(`${source}: could not parse CSV`, { cause: error });
   }
   const problems: string[] = [];
-  const header = rows[0] ? Object.keys(rows[0]) : [];
-  if (rows.length > 0) {
-    const missing = REQUIRED_COLUMNS.filter((column) => !header.includes(column));
-    if (missing.length > 0) {
-      throw new SchemaError(`${source}: missing column(s) ${missing.join(", ")}`, {
-        details: { expected: [...REQUIRED_COLUMNS, "note"], found: header },
-      });
-    }
+  if (new Set(header).size !== header.length)
+    throw new SchemaError(`${source}: duplicate column names`);
+  const missing = REQUIRED_COLUMNS.filter((column) => !header.includes(column));
+  if (missing.length > 0) {
+    throw new SchemaError(`${source}: missing column(s) ${missing.join(", ")}`, {
+      details: { expected: [...REQUIRED_COLUMNS, "note"], found: header },
+    });
   }
 
   const overrides: Override[] = [];
@@ -144,8 +159,11 @@ function parseOverrideRow(
   if (status === "no_match" && pulleyId) {
     return `${source} line ${line}: no_match must not carry a pulley_project_id`;
   }
-  if (decidedAt && !z.union([z.iso.date(), z.iso.datetime()]).safeParse(decidedAt).success) {
-    return `${source} line ${line}: decided_at "${decidedAt}" is not an ISO date`;
+  if (
+    decidedAt &&
+    !z.union([z.iso.date(), z.iso.datetime({ offset: true })]).safeParse(decidedAt).success
+  ) {
+    return `${source} line ${line}: decided_at "${decidedAt}" must be a real ISO date or timestamp with Z or a UTC offset`;
   }
   return {
     acmeId,
@@ -314,8 +332,8 @@ function targetProblem(
   if (!target) {
     return `override for ${override.acmeId} ignored: ${override.pulleyId} is not a Pulley project`;
   }
-  if (target.isPathfinder || target.isSignage) {
-    return `override for ${override.acmeId} ignored: ${override.pulleyId} is ${target.isPathfinder ? "pathfinder" : "signage"}, excluded by the brief`;
+  if (target.isPathfinder) {
+    return `override for ${override.acmeId} ignored: ${override.pulleyId} is pathfinder, excluded by the brief`;
   }
   // The brief's non-negotiable rules still apply to human decisions, and
   // upstream facts can change after a decision was recorded.
@@ -331,13 +349,15 @@ function targetProblem(
     !override.note.trim() &&
     matchSafetyIssue(acme, target, safetyIndex, true)?.reason === ReasonCode.EvidenceConflict
   )
-    return `override for ${override.acmeId} needs reconfirmation: a note must explain the reviewed street or milestone discrepancy`;
+    return `override for ${override.acmeId} needs reconfirmation: a note must explain the reviewed scope, street, or milestone discrepancy`;
   return null;
 }
 
 /** Why a recorded match can no longer be applied as-is, or null when it still holds. */
 function reconfirmationNeeded(acme: AcmeProject, target: PulleyRecord): string | null {
   if (acme.identityDisputed) return `${acme.identityDisputed}; resolve the source identity first`;
+  if (!signageScopeCompatible(acme, target))
+    return "Dedicated signage must match signage; it cannot share a general permit";
   if (!isInScope(acme, target)) {
     const state = acmeState(acme);
     return target.banner !== acme.banner
@@ -372,7 +392,7 @@ export function withDecisions(
     decisions.map((d) => d.pulleyId).filter((id): id is string => id !== null),
   );
   const unmatchedPulley = pulley
-    .filter((p) => !p.isPathfinder && !p.isSignage && !claimed.has(p.id))
+    .filter((p) => !p.isPathfinder && !claimed.has(p.id))
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((p) => ({ id: p.id, name: p.name, status: p.status }));
   return { ...report, decisions, counts, reasons, unmatchedPulley, statusDrift };
