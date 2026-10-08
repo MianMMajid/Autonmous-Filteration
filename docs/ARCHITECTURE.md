@@ -39,10 +39,12 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/domain/model.ts` | canonical records, banner and type code tables | done |
 | `src/domain/normalize/` | name parser, address normalizer, join into canonical records | done |
 | `src/domain/match/` | compatibility rules, tiered matcher, reason codes | done |
-| `src/output/` | CSV writers, summary, run diff | phase 4 |
+| `src/output/` | CSV renderers, run diff, summary text | done |
 | `src/run/archive.ts` | raw-input archive and replay | done |
 | `src/run/acquire.ts` | live fetch or archive replay, parse, drift report | done |
-| `src/run/` (lock, outputs) | lock file, output directory, latest pointer | phase 4 |
+| `src/run/lock.ts` | single-run lock with stale-owner reclaim | done |
+| `src/run/outputs.ts` | atomic output directory, latest pointer, run record | done |
+| `src/run/sync.ts` | the whole run in order | done |
 
 Dependency direction is one way: `cli -> run -> (sources | domain | output)`.
 `domain` imports nothing from `sources` or `output`; it works on plain typed
@@ -75,11 +77,17 @@ Defined in `src/errors.ts`.
 
 ```
 data/
-  raw/<run-id>/      exact bytes downloaded (reports, API pages) for replay
-  out/<run-id>/      mapping.csv, review.csv, summary.txt, run.json
-  out/latest -> out/<run-id>   symlink, moved only after a successful run
-  .lock              present while a run is active
+  raw/<run-id>/            exact bytes downloaded (reports, API pages) for replay
+  out/<run-id>/            mapping.csv, review.csv, decisions.csv,
+                           pulley-unmatched.csv, summary.txt, run.json
+  out/<run-id>.partial/    in-progress run; renamed to <run-id> only when complete
+  out/latest.json          { "runId": ... } of the last successful run
+  out/latest -> <run-id>   convenience symlink where the filesystem allows it
+  .lock                    present while a run is active; holds the owner pid
 ```
+
+`run.json` of the previous successful run feeds the diff in the next
+summary. A failed run never touches `latest.json`.
 
 `run-id` is an ISO timestamp in UTC. `--dry-run` reads the newest `raw/`
 directory instead of contacting either system, so matching logic can be
