@@ -101,3 +101,5 @@ id, never by map iteration order. A test enforces this.
 - 15 Pulley Signage projects; Acme has no Signage type.
 - 15 Pulley Canceled projects; only 3 are Closed on Acme's side.
 - 17 Acme store-and-year groups contain more than one row (39 rows).
+- Key Dates mixes two date formats: 1146 cells `MM/DD/YYYY`, 223 cells
+  `YYYY-MM-DD`, 631 blank. Pulley dates are always ISO.

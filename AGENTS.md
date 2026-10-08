@@ -58,6 +58,8 @@ pnpm test
   compiled artifact is ever needed.
 - Secrets never go in code, tests, fixtures, or log fields. The logger redacts
   common key names as a backstop only.
+- The Key Dates CSV mixes `MM/DD/YYYY` and `YYYY-MM-DD` in the same column.
+  `reportDateSchema` accepts both on purpose; do not narrow it.
 - Ties in the matcher go to `needs_review`, never to a guess. See `docs/adr/0004`.
 - `docs/brief/` is gitignored because the original PDF contains live credentials.
 

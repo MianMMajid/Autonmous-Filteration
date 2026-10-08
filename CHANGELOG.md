@@ -6,6 +6,14 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Phase 1 acquisition: HTTP client with retry, timeout, and typed error
+  mapping; SiteLedger sign-in and report download; parsers for the BIFF8
+  Project Register, the XLSX Site Directory, and the Key Dates CSV with
+  strict headers and row validation; paginated Pulley client with cursor-loop
+  and page-cap guards; raw-input archive with manifest and `--dry-run`
+  replay; vocabulary drift reporting for categorical fields. Tests run
+  against the real downloaded reports as fixtures.
+
 - Phase 0 scaffold: Node 26 native TypeScript execution, TypeScript 7 strict
   config, Biome, Vitest, Zod-validated configuration, pino logger with
   redaction, typed errors with stable exit codes, `preflight` health check,

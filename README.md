@@ -59,5 +59,6 @@ Zod, commander, pino, SheetJS (vendored), csv-parse/csv-stringify.
 
 ## Project status
 
-Phase 0 (scaffold, docs, gates) complete. Matching pipeline in progress. See
-`CHANGELOG.md`.
+Phases 0 and 1 complete: toolchain, docs, and acquisition from both systems
+with raw archiving and offline replay. Normalization and matching are next.
+See `CHANGELOG.md`.
