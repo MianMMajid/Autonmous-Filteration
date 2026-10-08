@@ -43,9 +43,20 @@ A tier that yields more than one candidate stops evaluation and produces
 | 4 | Status gate (below) | `STATUS_CONFLICT` |
 | 5 | No candidate survived | `NO_CANDIDATE` |
 
-Store numbers in Pulley names are only trusted when a 4-digit token is
-adjacent to a recognizable marker (`#`, `Store`, `|`, a city name, or the
-`store.sequence` pattern). Bare 4-digit years are excluded.
+Store numbers in Pulley names are extracted by `normalize/name.ts`. A 4-digit
+token preceded by a store marker (`#`, `Store`, `Club`, `AM-`, `Acme`, `|`)
+is a store. An unmarked token in 2024 to 2035 is a year. Sequences found on
+their own (`.1004`, `Seq 1005`, `Proj 1001`, trailing `(1001)`) are never
+treated as stores. Three real stores (2020, 2020, 2023) fall in the year
+range; they are recognized only when marked.
+
+**Type compatibility, not type equality.** The type code inside a Pulley
+name is Acme's line-item type, while Pulley's `project_type` is the permit
+type. In the data, Coffee Tenant, Deli Remodel, and Pharmacy Relocation
+lines are filed under Remodel or Expansion permits at the same store and
+year. Tier 2 therefore narrows by *compatible* type: equal types, or a
+Pulley umbrella type (Remodel, Expansion, New Build) covering an Acme
+tenant-style line. Signage is never compatible with anything.
 
 ## Status gate
 
@@ -97,7 +108,17 @@ id, never by map iteration order. A test enforces this.
 - 146 Pulley names contain a full ID (137 found in the register), 275 contain
   a store number only, 28 contain neither.
 - 299 Pulley projects have a street; 169 match the directory before
-  normalization.
+  normalization, 256 after (`normalize/address.ts`). Of the 43 remaining,
+  39 are the correct street with a mistyped house number (411 vs 501,
+  3288 vs 3688, 4549 vs 4949) and 4 belong to names with no store number.
+  So an exact street match is strong evidence, and a street-name-only
+  match (`streetNameKey`) is corroboration, never proof.
+- Canonical names: 66 Pulley names and all 400 Acme names carry the
+  `STORE.SEQ-CITY-ST-BANNER-TYPE-YEAR` structure. Banner codes SUP and MKT
+  mean Market, WHC means Warehouse Club. City in the canonical name equals
+  Pulley's jurisdiction city in 64 of 66 cases.
+- 11 Pulley names carry a `[Canceled]` marker; 32 names carry no store,
+  full id, or sequence at all (28 of them have no digits).
 - 15 Pulley Signage projects; Acme has no Signage type.
 - 15 Pulley Canceled projects; only 3 are Closed on Acme's side.
 - 17 Acme store-and-year groups contain more than one row (39 rows).

@@ -6,6 +6,14 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Phase 2 normalization: canonical `AcmeProject`, `AcmeSite`, and
+  `PulleyRecord` models; project-name parser that extracts full ids, store
+  numbers, sequences, years, canonical `STORE.SEQ-CITY-ST-BANNER-TYPE-YEAR`
+  structure, and status decorations from all 116 observed name shapes;
+  street-address normalizer (suffixes, directionals, units, venue prefixes)
+  that lifts exact-address hits from 169 to 256 of 299; join of the Project
+  Register to the Site Directory and Key Dates with warnings for join gaps.
+
 - Phase 1 acquisition: HTTP client with retry, timeout, and typed error
   mapping; SiteLedger sign-in and report download; parsers for the BIFF8
   Project Register, the XLSX Site Directory, and the Key Dates CSV with

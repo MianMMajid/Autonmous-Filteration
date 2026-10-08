@@ -10,6 +10,7 @@
 
 import { Command } from "commander";
 import { loadConfig } from "./config.ts";
+import { normalizeInputs } from "./domain/normalize/build.ts";
 import { ExitCode, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
 import { acquireInputs } from "./run/acquire.ts";
@@ -55,8 +56,21 @@ program
       );
     }
 
-    // Phases 2-4 land here: normalization -> matching -> output.
-    log.warn("matching is not implemented yet (Phase 1: acquisition only)");
+    const normalized = normalizeInputs(inputs);
+    for (const warning of normalized.warnings) log.warn(warning);
+    log.info(
+      {
+        acmeProjects: normalized.acme.length,
+        acmeWithSite: normalized.acme.filter((p) => p.site !== null).length,
+        pulleyCandidates: normalized.pulley.filter((p) => !p.isPathfinder && !p.isSignage).length,
+        pulleyWithFullId: normalized.pulley.filter((p) => p.parsedName.fullIds.length > 0).length,
+        pulleyWithStreetKey: normalized.pulley.filter((p) => p.streetKey !== null).length,
+      },
+      "inputs normalized",
+    );
+
+    // Phases 3-4 land here: matching -> output.
+    log.warn("matching is not implemented yet (Phase 2: normalization only)");
   });
 
 async function main(): Promise<void> {
