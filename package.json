@@ -1,0 +1,43 @@
+{
+  "name": "siteledger-sync",
+  "version": "0.1.0",
+  "description": "Matches Acme SiteLedger projects to Pulley projects and emits a mapping CSV for Permit Ops.",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=26.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "preflight": "node --env-file-if-exists=.env src/preflight.ts",
+    "sync": "node --env-file-if-exists=.env src/cli.ts sync",
+    "cli": "node --env-file-if-exists=.env src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "verify": "pnpm preflight && pnpm lint && pnpm typecheck && pnpm test",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "commander": "15.0.0",
+    "csv-parse": "7.0.3",
+    "csv-stringify": "6.9.0",
+    "pino": "10.4.0",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "26.6.4",
+    "@vitest/coverage-v8": "5.0.3",
+    "pino-pretty": "13.2.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
