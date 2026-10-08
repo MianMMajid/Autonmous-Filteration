@@ -74,11 +74,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     const matched = matchProjects(normalized);
     log.info({ ...matched.counts, reasons: matched.reasons }, "matching complete");
 
-    const overrides = applyOverrides(
-      matched,
-      await loadOverrides(config.dataDir),
-      normalized.pulley,
-    );
+    const overrides = applyOverrides(matched, await loadOverrides(config.dataDir), normalized);
     for (const problem of overrides.problems) log.warn(problem);
     if (overrides.applied > 0) log.info({ applied: overrides.applied }, "overrides applied");
     const report = overrides.report;

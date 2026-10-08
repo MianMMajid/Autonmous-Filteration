@@ -126,6 +126,37 @@ Results after the second pass: 334 matched, 16 needs_review, 50 no_match.
 The estimate below is unchanged; the two rows that left `matched` were the
 demoted year conflicts.
 
+## Third pass: external audit (same day)
+
+An independent audit at commit `65696c8` reproduced fifteen defects. Each
+was verified against the then-current code and fixed, with a test:
+
+| Finding | Fix |
+|---|---|
+| One Pulley project claimed across program years | Assignment pass anchored by the full id in the name, then exact dates; a register-wide invariant test |
+| Full ids bypassing the shared-store-number guard | Tier 1 requires locality agreement when the id's store number identifies two buildings |
+| Street text treated as unique statewide | Address keys require a house number; shared street keys need city agreement |
+| Saved overrides surviving later cancellation or banner changes | Overrides are re-checked against banner, state, and the status gate on every run and reported as needing reconfirmation |
+| Same-second run ids overwriting history | Run ids carry milliseconds; archive and output directories are created exclusively and never deleted on publish |
+| Stale-lock recovery granting several owners | Lock created by atomic `link`; stale locks claimed by `rename`, which exactly one contender wins; 20-way concurrent test |
+| Replay differing from live on duplicate pages | One dedupe helper for both paths; equality test with a repeated page |
+| Date tier accepting an explicit other-year name | Temporal conflict filter on tier 5 and its reverse check |
+| Reverse uniqueness ignoring state | Reverse checks scoped to banner and state |
+| Missing site erasing canonical identity | Banner falls back to the canonical name's code (fixed in the second pass) |
+| Unknown status values treated as permission to match | Explicit lifecycle classification; unknown values go to review as `STATUS_UNKNOWN` |
+| Incomplete addresses promoted to exact evidence | House number required; placeholders rejected |
+| Body-read failures bypassing retries | The whole exchange, including the body, runs inside the retry loop |
+| Spreadsheet formula injection in exports | `escape_formulas` on every human-facing CSV; the mapping file carries ids only |
+| Whitespace bypassing the pathfinder exclusion | Categorical fields trimmed at the schema |
+
+The scheduled workflow now publishes an artifact only on success, so a
+failed run can never present the previous run's CSV under its own name.
+
+Results after the third pass: 333 matched, 17 needs_review, 50 no_match.
+The estimate is unchanged. The audit is right that no precision figure can
+be established without adjudicated correct mappings; the figure here rests
+on the hand check described above and should be read as such.
+
 ## How to repeat this
 
 ```sh

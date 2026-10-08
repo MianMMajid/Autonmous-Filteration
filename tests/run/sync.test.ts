@@ -70,7 +70,7 @@ function run(fetch: ReturnType<typeof mockFetch>, now: string, dryRun = false) {
 describe("runSync end to end", () => {
   it("writes every output file, the run record, and the latest pointer", async () => {
     const outcome = await run(upstreams(), "2026-10-08T10:00:00Z");
-    expect(outcome.runId).toBe("2026-10-08T10-00-00Z");
+    expect(outcome.runId).toBe("2026-10-08T10-00-00-000Z");
     expect((await readdir(outcome.outputDirectory)).sort()).toEqual([
       "decisions.csv",
       "mapping.csv",
@@ -97,11 +97,11 @@ describe("runSync end to end", () => {
 
     expect(outcome.summary).toMatch(/Results: matched \d+ \(\d+\.\d%\)/);
     expect(outcome.summary).toMatch(/first run/);
-    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00Z");
+    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00-000Z");
     expect(JSON.parse(await readFile(join(dataDir, "out", "latest.json"), "utf8"))).toEqual({
-      runId: "2026-10-08T10-00-00Z",
+      runId: "2026-10-08T10-00-00-000Z",
     });
-    expect(await readdir(join(dataDir, "out"))).not.toContain("2026-10-08T10-00-00Z.partial");
+    expect(await readdir(join(dataDir, "out"))).not.toContain("2026-10-08T10-00-00-000Z.partial");
   });
 
   it("is byte-identical across two runs over the same inputs and reports no changes", async () => {
@@ -110,7 +110,7 @@ describe("runSync end to end", () => {
     const a = await readFile(join(first.outputDirectory, "mapping.csv"), "utf8");
     const b = await readFile(join(second.outputDirectory, "mapping.csv"), "utf8");
     expect(a).toBe(b);
-    expect(second.diff.previousRunId).toBe("2026-10-08T10-00-00Z");
+    expect(second.diff.previousRunId).toBe("2026-10-08T10-00-00-000Z");
     expect(second.diff.changes).toEqual([]);
     expect(second.summary).toMatch(/0 newly matched, 0 lost match/);
   });
@@ -133,6 +133,32 @@ describe("runSync end to end", () => {
     expect(second.summary).toContain(
       `${victim.acmeId}: matched (${victim.pulleyId}) -> needs_review`,
     );
+  });
+
+  it("replays an archive whose pages repeat a project exactly like the live run", async () => {
+    const all = JSON.parse(fixture("pulley/projects-all.json").toString("utf8")) as Record<
+      string,
+      unknown
+    >[];
+    const fetch = mockFetch((url) => {
+      if (url.endsWith("/api/auth/login"))
+        return json({ token: "tok", expiresAt: "2099-01-01T00:00:00Z" });
+      if (url.endsWith("/api/reports/project-register"))
+        return new Response(fixture("siteledger/project-register.xls"));
+      if (url.endsWith("/api/reports/site-directory"))
+        return new Response(fixture("siteledger/site-directory.xlsx"));
+      if (url.endsWith("/api/reports/key-dates"))
+        return new Response(fixture("siteledger/key-dates.csv"));
+      if (url.includes("cursor=")) return json({ projects: all.slice(0, 3), next_cursor: null }); // repeats
+      return json({ projects: all, next_cursor: "again" });
+    });
+    const live = await run(fetch, "2026-10-08T10:00:00Z");
+    const replay = await run(fetch, "2026-10-08T11:00:00Z", true);
+    expect(replay.report.counts).toEqual(live.report.counts);
+    expect(replay.report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual(
+      live.report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId]),
+    );
+    expect(replay.summary).toMatch(/3 duplicate project id/);
   });
 
   it("replays the archive in dry-run mode and still writes outputs", async () => {
@@ -167,7 +193,7 @@ describe("runSync end to end", () => {
     const held = await acquireLock(dataDir, { pid: process.pid });
     await expect(run(upstreams(), "2026-10-08T11:00:00Z")).rejects.toBeInstanceOf(LockedError);
     await held.release();
-    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00Z");
+    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00-000Z");
   });
 
   it("does not move latest when writing outputs fails", async () => {
@@ -179,7 +205,7 @@ describe("runSync end to end", () => {
     } finally {
       await chmod(outRoot, 0o755);
     }
-    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00Z");
-    expect(await readdir(outRoot)).not.toContain("2026-10-08T11-00-00Z");
+    expect((await loadPreviousRun(dataDir))?.runId).toBe("2026-10-08T10-00-00-000Z");
+    expect(await readdir(outRoot)).not.toContain("2026-10-08T11-00-00-000Z");
   });
 });

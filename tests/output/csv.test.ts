@@ -66,6 +66,28 @@ describe("renderDecisionsCsv and renderReviewCsv", () => {
     expect(lines[3]).toContain('"2 candidates tie, with ""quotes"""');
   });
 
+  it("neutralizes spreadsheet formulas in free-text cells", () => {
+    const rows = [
+      decision({
+        acmeId: "1556.1002",
+        status: "no_match",
+        acmeName: "=1+1",
+        note: "+cmd|' /C calc'!A0",
+      }),
+    ];
+    const csv = renderDecisionsCsv(rows);
+    expect(csv).not.toMatch(/,=1\+1,/);
+    expect(csv).toMatch(/,'=1\+1,/);
+    expect(csv).toMatch(/,'\+cmd\|' \/C calc'!A0,/);
+    const unmatched = renderUnmatchedPulleyCsv({
+      unmatchedPulley: [{ id: "prj_a", name: "@SUM(A1)", status: "Draft" }],
+    } as unknown as MatchReport);
+    expect(unmatched).toMatch(/,'@SUM\(A1\),/);
+    expect(renderMappingCsv(rows)).toBe(
+      "acme_pcroject_id,pulley_project_id,status\n1556.1002,,no_match\n",
+    );
+  });
+
   it("review file contains only needs_review rows", () => {
     const lines = renderReviewCsv(decisions).trimEnd().split("\n");
     expect(lines).toHaveLength(2);

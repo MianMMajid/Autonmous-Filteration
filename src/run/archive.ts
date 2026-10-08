@@ -40,11 +40,11 @@ export const MANIFEST_FILENAME = "manifest.json";
 
 /** Filesystem-safe, sortable run id derived from a UTC timestamp. */
 export function createRunId(now: Date = new Date()): string {
-  return now
-    .toISOString()
-    .replace(/\.\d{3}Z$/, "Z")
-    .replace(/:/g, "-");
+  return now.toISOString().replace(/[:.]/g, "-");
 }
+
+/** Matches run directory names, current (with milliseconds) and legacy (without). */
+export const RUN_ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d{3})?Z$/;
 
 export class RawArchive {
   readonly directory: string;
@@ -56,11 +56,20 @@ export class RawArchive {
     this.directory = join(dataDir, "raw", runId);
   }
 
+  /** Creates the run directory exclusively: an existing one is a run-id collision, never reused. */
   async init(): Promise<void> {
     try {
-      await mkdir(this.directory, { recursive: true });
+      await mkdir(join(this.directory, ".."), { recursive: true });
+      await mkdir(this.directory);
     } catch (error) {
-      throw new IoError(`Could not create archive directory ${this.directory}`, { cause: error });
+      const collision =
+        typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+      throw new IoError(
+        collision
+          ? `Archive directory ${this.directory} already exists; refusing to overwrite a previous run`
+          : `Could not create archive directory ${this.directory}`,
+        { cause: error },
+      );
     }
   }
 

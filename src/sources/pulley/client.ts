@@ -33,6 +33,28 @@ export interface PulleyFetchResult {
   readonly warnings: readonly string[];
 }
 
+/**
+ * Keep the first occurrence of each project id. Shared by the live client and
+ * the archive replay so both produce the same candidate set from the same pages.
+ */
+export function dedupeProjects(projects: readonly PulleyProject[]): {
+  readonly projects: PulleyProject[];
+  readonly duplicates: number;
+} {
+  const seen = new Set<string>();
+  const unique: PulleyProject[] = [];
+  let duplicates = 0;
+  for (const project of projects) {
+    if (seen.has(project.id)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(project.id);
+    unique.push(project);
+  }
+  return { projects: unique, duplicates };
+}
+
 export class PulleyClient {
   readonly #baseUrl: string;
   readonly #apiKey: string;
@@ -49,13 +71,11 @@ export class PulleyClient {
   }
 
   async fetchAllProjects(): Promise<PulleyFetchResult> {
-    const projects: PulleyProject[] = [];
+    const all: PulleyProject[] = [];
     const pages: RawPage[] = [];
     const warnings: string[] = [];
-    const seenIds = new Set<string>();
     const seenCursors = new Set<string>();
     let cursor: string | null = null;
-    let duplicates = 0;
 
     for (;;) {
       if (pages.length >= this.#maxPages) {
@@ -65,15 +85,7 @@ export class PulleyClient {
       }
       const page = await this.#fetchPage(cursor, pages.length + 1);
       pages.push({ cursor, body: page.body });
-
-      for (const project of page.projects) {
-        if (seenIds.has(project.id)) {
-          duplicates++;
-          continue;
-        }
-        seenIds.add(project.id);
-        projects.push(project);
-      }
+      all.push(...page.projects);
 
       const next: string | null = page.nextCursor;
       if (next === null) break;
@@ -86,6 +98,7 @@ export class PulleyClient {
       cursor = next;
     }
 
+    const { projects, duplicates } = dedupeProjects(all);
     if (duplicates > 0) {
       warnings.push(`Pulley API: ${duplicates} duplicate project id(s) across pages were ignored`);
     }
@@ -105,7 +118,7 @@ export class PulleyClient {
       { method: "GET", headers: { "x-api-key": this.#apiKey, accept: "application/json" } },
       { system: "pulley", what: `Pulley projects page ${pageNumber}` },
     );
-    const body = await response.text();
+    const body = response.text();
 
     let json: unknown;
     try {

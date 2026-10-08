@@ -1,13 +1,16 @@
 import type { AcmeProject, NormalizedInputs, PulleyRecord } from "../model.ts";
 import {
+  acmeLifecycle,
   acmeState,
   acmeStoreNumbers,
   cityMatches,
   dateProximityDays,
   isPulleyCanceled,
+  StatusVerdict,
   sequenceRelation,
   statusDrift,
   statusesAgree,
+  statusVerdict,
   storeContradicts,
   storeMatches,
   Temporal,
@@ -112,6 +115,7 @@ function resolveYearConflicts(
   register: readonly AcmeProject[],
 ): MatchDecision[] {
   const yearOf = new Map(register.map((a) => [a.id, a.programYear]));
+  const siteOf = new Map(register.map((a) => [a.id, a.siteId]));
   const claims = new Map<string, MatchDecision[]>();
   for (const d of decisions) {
     if (d.status !== OutputStatus.Matched || d.pulleyId === null) continue;
@@ -119,19 +123,26 @@ function resolveYearConflicts(
   }
   const demoted = new Map<string, MatchDecision>();
   for (const [pulleyId, group] of claims) {
-    if (new Set(group.map((d) => yearOf.get(d.acmeId))).size < 2) continue;
-    const strong = group.filter(isStrongClaim);
+    const sameYear = new Set(group.map((d) => yearOf.get(d.acmeId))).size < 2;
+    const sameSite = new Set(group.map((d) => siteOf.get(d.acmeId))).size < 2;
+    if (sameYear && sameSite) continue;
+    // The full id written in the name pins the project to that line's year;
+    // exact dates are next; otherwise the best-scored claim anchors the group.
+    const byId = group.filter((d) => d.tier === Tier.ExactId);
+    const byDates = group.filter(isStrongClaim);
     const anchors =
-      strong.length > 0
-        ? strong
-        : [
-            [...group].sort(
-              (a, b) => (b.candidates[0]?.score ?? 0) - (a.candidates[0]?.score ?? 0),
-            )[0] as MatchDecision,
-          ];
-    const keepYears = new Set(anchors.map((d) => yearOf.get(d.acmeId)));
+      byId.length > 0
+        ? byId
+        : byDates.length > 0
+          ? byDates
+          : [
+              [...group].sort(
+                (a, b) => (b.candidates[0]?.score ?? 0) - (a.candidates[0]?.score ?? 0),
+              )[0] as MatchDecision,
+            ];
+    const keep = new Set(anchors.map((d) => `${siteOf.get(d.acmeId)}|${yearOf.get(d.acmeId)}`));
     for (const d of group) {
-      if (keepYears.has(yearOf.get(d.acmeId))) continue;
+      if (keep.has(`${siteOf.get(d.acmeId)}|${yearOf.get(d.acmeId)}`)) continue;
       const others = group
         .filter((o) => o !== d)
         .map((o) => `${o.acmeId} (${yearOf.get(o.acmeId)})`)
@@ -228,7 +239,7 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
 
   const storeAll = scoped.filter((p) => isStoreCandidate(acme, p, context.sharedNumbers));
   const tiers: ReadonlyArray<readonly [Tier, readonly PulleyRecord[]]> = [
-    [Tier.ExactId, scoped.filter((p) => p.parsedName.fullIds.includes(acme.id))],
+    [Tier.ExactId, scoped.filter((p) => isExactIdCandidate(acme, p, context.sharedNumbers))],
     [Tier.Store, storeAll.filter(sameYear)],
     [
       Tier.Sequence,
@@ -248,6 +259,7 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
       scoped.filter(
         (p) =>
           isDateCandidate(acme, p) &&
+          sameYear(p) &&
           memo(context.dateOwner, p, () => identifiedAcmeIdByDates(p, context.acme)) === acme.id,
       ),
     ],
@@ -291,6 +303,28 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
   return noCandidate(acme, context.excluded);
 }
 
+/**
+ * The full Acme id in the name. When that id's store number also identifies
+ * another building (a former number reused as a current one), the name alone
+ * cannot say which building it means, so the locality must agree too.
+ */
+function isExactIdCandidate(
+  acme: AcmeProject,
+  pulley: PulleyRecord,
+  sharedNumbers: ReadonlySet<number>,
+): boolean {
+  if (!pulley.parsedName.fullIds.includes(acme.id)) return false;
+  if (!sharedNumbers.has(acme.store)) return true;
+  return localityAgrees(acme, pulley);
+}
+
+function localityAgrees(acme: AcmeProject, pulley: PulleyRecord): boolean {
+  const streetAgrees =
+    (pulley.streetKey !== null && pulley.streetKey === acme.site?.streetKey) ||
+    (pulley.streetNameKey !== null && pulley.streetNameKey === acme.site?.streetNameKey);
+  return cityMatches(acme, pulley) || streetAgrees;
+}
+
 /** Store number in the name identifies this building (and, for shared numbers, the locality agrees). */
 function isStoreCandidate(
   acme: AcmeProject,
@@ -303,10 +337,7 @@ function isStoreCandidate(
     (n) => !mine.includes(n) || sharedNumbers.has(n),
   );
   if (!viaShared) return true;
-  const streetAgrees =
-    (pulley.streetKey !== null && pulley.streetKey === acme.site?.streetKey) ||
-    (pulley.streetNameKey !== null && pulley.streetNameKey === acme.site?.streetNameKey);
-  return cityMatches(acme, pulley) || streetAgrees;
+  return localityAgrees(acme, pulley);
 }
 
 /** Name has no store, carries this exact sequence, and sits in this city. */
@@ -329,7 +360,7 @@ function isSequenceCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
 function identifiedAcmeId(pulley: PulleyRecord, register: readonly AcmeProject[]): string | null {
   let found: string | null = null;
   for (const other of register) {
-    if (other.banner !== pulley.banner) continue;
+    if (other.banner !== pulley.banner || acmeState(other) !== pulley.state) continue;
     if (!isSequenceCandidate(other, pulley)) continue;
     if (!typesCompatible(other.projectType, pulley.projectType)) continue;
     if (temporalVerdict(other, pulley) === Temporal.Conflict) continue;
@@ -366,8 +397,9 @@ function identifiedAcmeIdByDates(
 ): string | null {
   let found: string | null = null;
   for (const other of register) {
-    if (other.banner !== pulley.banner) continue;
+    if (other.banner !== pulley.banner || acmeState(other) !== pulley.state) continue;
     if (!isDateCandidate(other, pulley)) continue;
+    if (temporalVerdict(other, pulley) === Temporal.Conflict) continue;
     if (found !== null) return null;
     found = other.id;
   }
@@ -492,7 +524,18 @@ function strongDecision(
   if (!winner.evidence.typeCompatible) {
     return unrelatedOrMismatch(acme, candidates, winner, tier);
   }
-  if (!winner.evidence.statusAgree) {
+  const verdict = statusVerdict(acme.status, winner.pulleyStatus);
+  if (verdict === StatusVerdict.Unknown) {
+    const odd = acmeLifecycle(acme.status) === "unknown" ? acme.status : winner.pulleyStatus;
+    return review(
+      acme,
+      candidates,
+      tier,
+      ReasonCode.StatusUnknown,
+      `status "${odd}" has no known meaning; cannot apply the canceled-on-both-sides rule`,
+    );
+  }
+  if (verdict === StatusVerdict.Conflict) {
     return review(
       acme,
       candidates,

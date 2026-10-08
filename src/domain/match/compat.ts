@@ -162,6 +162,21 @@ export function temporalVerdict(acme: AcmeProject, pulley: PulleyRecord): Tempor
 
 // ---------- Status gate ----------
 
+/**
+ * Lifecycle meaning of a status value. Every value is classified explicitly;
+ * a value we have never seen is `unknown`, and an unknown lifecycle never
+ * produces a confident match (see `statusVerdict`).
+ */
+const ACME_ACTIVE: ReadonlySet<string> = new Set([
+  "active",
+  "deferred",
+  "on hold",
+  "in progress",
+  "draft",
+  "planned",
+  "open",
+  "pending",
+]);
 const ACME_CLOSED: ReadonlySet<string> = new Set([
   "closed",
   "complete",
@@ -169,28 +184,68 @@ const ACME_CLOSED: ReadonlySet<string> = new Set([
   "canceled",
   "cancelled",
 ]);
+const PULLEY_ACTIVE: ReadonlySet<string> = new Set([
+  "in progress",
+  "on hold",
+  "draft",
+  "planned",
+  "open",
+  "active",
+  "pending",
+]);
 const PULLEY_CANCELED: ReadonlySet<string> = new Set(["canceled", "cancelled", "cancelation"]);
 const PULLEY_COMPLETE: ReadonlySet<string> = new Set(["complete", "completed", "closed", "done"]);
-const PULLEY_ENDED: ReadonlySet<string> = new Set([...PULLEY_CANCELED, ...PULLEY_COMPLETE]);
+
+export type AcmeLifecycle = "active" | "ended" | "unknown";
+export type PulleyLifecycle = "active" | "complete" | "canceled" | "unknown";
+
+export function acmeLifecycle(status: string): AcmeLifecycle {
+  const key = typeKey(status);
+  if (ACME_ACTIVE.has(key)) return "active";
+  if (ACME_CLOSED.has(key)) return "ended";
+  return "unknown";
+}
+
+export function pulleyLifecycle(status: string): PulleyLifecycle {
+  const key = typeKey(status);
+  if (PULLEY_ACTIVE.has(key)) return "active";
+  if (PULLEY_CANCELED.has(key)) return "canceled";
+  if (PULLEY_COMPLETE.has(key)) return "complete";
+  return "unknown";
+}
 
 export function isAcmeClosed(status: string): boolean {
-  return ACME_CLOSED.has(typeKey(status));
+  return acmeLifecycle(status) === "ended";
 }
 
 export function isPulleyCanceled(status: string): boolean {
-  return PULLEY_CANCELED.has(typeKey(status));
+  return pulleyLifecycle(status) === "canceled";
 }
+
+export const StatusVerdict = {
+  Agree: "agree",
+  Conflict: "conflict",
+  /** One side's status has no known lifecycle meaning; a human decides. */
+  Unknown: "unknown",
+} as const;
+export type StatusVerdict = (typeof StatusVerdict)[keyof typeof StatusVerdict];
 
 /**
  * Brief: canceled only counts when canceled or closed on both sides.
- * Returns true when the pair is consistent enough to report as matched.
+ * Ended on Acme's side needs ended (complete or canceled) on Pulley's; live
+ * on Acme's side tolerates anything but canceled. Unknown vocabulary on
+ * either side is reported as such rather than guessed.
  */
+export function statusVerdict(acmeStatus: string, pulleyStatus: string): StatusVerdict {
+  const acme = acmeLifecycle(acmeStatus);
+  const pulley = pulleyLifecycle(pulleyStatus);
+  if (acme === "unknown" || pulley === "unknown") return StatusVerdict.Unknown;
+  if (acme === "ended") return pulley === "active" ? StatusVerdict.Conflict : StatusVerdict.Agree;
+  return pulley === "canceled" ? StatusVerdict.Conflict : StatusVerdict.Agree;
+}
+
 export function statusesAgree(acmeStatus: string, pulleyStatus: string): boolean {
-  const acmeClosed = isAcmeClosed(acmeStatus);
-  const pulleyEnded = PULLEY_ENDED.has(typeKey(pulleyStatus));
-  const pulleyCanceled = isPulleyCanceled(pulleyStatus);
-  if (acmeClosed) return pulleyEnded;
-  return !pulleyCanceled;
+  return statusVerdict(acmeStatus, pulleyStatus) === StatusVerdict.Agree;
 }
 
 /**

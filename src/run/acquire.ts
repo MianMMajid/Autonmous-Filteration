@@ -2,7 +2,7 @@ import type { Config } from "../config.ts";
 import { SchemaError } from "../errors.ts";
 import type { Logger } from "../logger.ts";
 import { HttpClient } from "../sources/http.ts";
-import { PulleyClient } from "../sources/pulley/client.ts";
+import { dedupeProjects, PulleyClient } from "../sources/pulley/client.ts";
 import {
   PULLEY_ACCOUNT_PLANS,
   PULLEY_ORGANIZATIONS,
@@ -162,7 +162,17 @@ async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
     pulley.push(...result.data.projects);
   }
 
-  const parsed = parseAll({ projectRegister, siteDirectory, keyDates, pulley, warnings: [] });
+  const deduped = dedupeProjects(pulley);
+  const parsed = parseAll({
+    projectRegister,
+    siteDirectory,
+    keyDates,
+    pulley: deduped.projects,
+    warnings:
+      deduped.duplicates > 0
+        ? [`Archive: ${deduped.duplicates} duplicate project id(s) across pages were ignored`]
+        : [],
+  });
   return {
     runId: createRunId(options.now?.() ?? new Date()),
     source: "archive",

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { IoError } from "../../src/errors.ts";
 import { createRunId, loadLatestArchive, RawArchive } from "../../src/run/archive.ts";
 import { pruneRuns, updateLatest, writeOutputs } from "../../src/run/outputs.ts";
 
@@ -48,7 +49,10 @@ describe("pruneRuns", () => {
 
 describe("createRunId", () => {
   it("is filesystem safe and sortable", () => {
-    expect(createRunId(new Date("2026-10-08T15:30:00.123Z"))).toBe("2026-10-08T15-30-00Z");
+    expect(createRunId(new Date("2026-10-08T15:30:00.123Z"))).toBe("2026-10-08T15-30-00-123Z");
+    expect(createRunId(new Date("2026-10-08T15:30:00.900Z"))).not.toBe(
+      createRunId(new Date("2026-10-08T15:30:00.100Z")),
+    );
   });
 });
 
@@ -81,6 +85,21 @@ describe("RawArchive", () => {
     expect(loaded?.manifest.runId).toBe("2026-10-08T12-00-00Z");
     const bytes = await loaded?.read(manifest.files[0] as NonNullable<(typeof manifest.files)[0]>);
     expect([...(bytes ?? [])]).toEqual([1, 2]);
+  });
+
+  it("refuses to reuse an existing archive directory or overwrite an existing output run", async () => {
+    const a = new RawArchive(dataDir, "2026-10-08T12-00-00-000Z");
+    await a.init();
+    await expect(new RawArchive(dataDir, "2026-10-08T12-00-00-000Z").init()).rejects.toBeInstanceOf(
+      IoError,
+    );
+    await writeOutputs(dataDir, "2026-10-08T12-00-00-000Z", { "mapping.csv": "first" });
+    await expect(
+      writeOutputs(dataDir, "2026-10-08T12-00-00-000Z", { "mapping.csv": "second" }),
+    ).rejects.toBeInstanceOf(IoError);
+    expect(
+      await readFile(join(dataDir, "out", "2026-10-08T12-00-00-000Z", "mapping.csv"), "utf8"),
+    ).toBe("first");
   });
 
   it("returns null when nothing has been archived", async () => {

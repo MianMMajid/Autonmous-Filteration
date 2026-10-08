@@ -41,6 +41,26 @@ describe("pulleyPageSchema", () => {
     expect(first?.streetAddress).toBeNull();
   });
 
+  it("trims categorical fields so whitespace cannot bypass exclusions", () => {
+    const padded = {
+      projects: [
+        {
+          ...fixturePage.projects[0],
+          account_plan: " pathfinder ",
+          status: "Draft  ",
+          organization: " Acme Market",
+        },
+      ],
+      next_cursor: null,
+    };
+    const parsed = pulleyPageSchema.parse(padded);
+    expect(parsed.projects[0]).toMatchObject({
+      accountPlan: "pathfinder",
+      status: "Draft",
+      organization: "Acme Market",
+    });
+  });
+
   it("rejects a malformed date", () => {
     const bad = {
       projects: [{ ...fixturePage.projects[0], permit_submitted: "19/01/2027" }],

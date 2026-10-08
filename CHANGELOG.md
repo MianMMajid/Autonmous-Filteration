@@ -6,6 +6,17 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Audit response: register-wide assignment pass (the full id in the name pins
+  the year), locality guard on full ids whose store number identifies two
+  buildings, house-number requirement and shared-street guard for addresses,
+  override reconfirmation against banner, state, and the status gate,
+  millisecond run ids with exclusively created directories, link-and-rename
+  lock protocol, one dedupe path for live and replay, temporal filter on the
+  date tier, state-scoped reverse checks, explicit status lifecycle with
+  `STATUS_UNKNOWN`, body-inclusive HTTP retries, formula escaping on
+  human-facing CSVs, trimmed categorical fields, artifact upload only on
+  success. 218 tests.
+
 - Edge-case and performance pass: year-conflict post-pass (`YEAR_CONFLICT`),
   exact ids on the other banner or state surfaced as `ID_OUTSIDE_SCOPE`,
   status drift reported per matched row and in the summary, banner fallback

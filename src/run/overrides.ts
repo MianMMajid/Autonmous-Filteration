@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseCsv } from "csv-parse/sync";
+import { acmeState, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
 import type { MatchDecision, MatchReport, OutputStatus } from "../domain/match/types.ts";
 import { ReasonCode } from "../domain/match/types.ts";
-import type { PulleyRecord } from "../domain/model.ts";
+import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
 import { SchemaError } from "../errors.ts";
 
 /**
@@ -119,10 +120,12 @@ export interface AppliedOverrides {
 export function applyOverrides(
   report: MatchReport,
   loaded: LoadedOverrides,
-  pulley: readonly PulleyRecord[],
+  inputs: { readonly acme: readonly AcmeProject[]; readonly pulley: readonly PulleyRecord[] },
 ): AppliedOverrides {
+  const { pulley } = inputs;
   const problems = [...loaded.problems];
   const byAcme = new Map(report.decisions.map((d) => [d.acmeId, d]));
+  const acmeById = new Map(inputs.acme.map((a) => [a.id, a]));
   const pulleyById = new Map(pulley.map((p) => [p.id, p]));
   let applied = 0;
 
@@ -132,22 +135,12 @@ export function applyOverrides(
       problems.push(`override for ${override.acmeId} ignored: not in the Project Register`);
       continue;
     }
-    if (override.pulleyId !== null) {
-      const target = pulleyById.get(override.pulleyId);
-      if (!target) {
-        problems.push(
-          `override for ${override.acmeId} ignored: ${override.pulleyId} is not a Pulley project`,
-        );
-        continue;
-      }
-      if (target.isPathfinder || target.isSignage) {
-        problems.push(
-          `override for ${override.acmeId} ignored: ${override.pulleyId} is ${target.isPathfinder ? "pathfinder" : "signage"}, excluded by the brief`,
-        );
-        continue;
-      }
+    const problem = targetProblem(override, acmeById.get(override.acmeId), pulleyById);
+    if (problem) {
+      problems.push(problem);
+      continue;
     }
-    const replaced: MatchDecision = {
+    byAcme.set(override.acmeId, {
       ...current,
       status: override.status,
       pulleyId: override.pulleyId,
@@ -155,13 +148,54 @@ export function applyOverrides(
       tier: null,
       note: override.note ? `override: ${override.note}` : "override",
       statusDrift: null,
-    };
-    byAcme.set(override.acmeId, replaced);
+    });
     applied++;
   }
 
   const decisions = report.decisions.map((d) => byAcme.get(d.acmeId) ?? d);
   return { report: withDecisions(report, decisions, pulley), applied, problems };
+}
+
+/** Why a matched override's target cannot be applied, or null when it can. */
+function targetProblem(
+  override: Override,
+  acme: AcmeProject | undefined,
+  pulleyById: ReadonlyMap<string, PulleyRecord>,
+): string | null {
+  if (override.pulleyId === null) return null;
+  const target = pulleyById.get(override.pulleyId);
+  if (!target) {
+    return `override for ${override.acmeId} ignored: ${override.pulleyId} is not a Pulley project`;
+  }
+  if (target.isPathfinder || target.isSignage) {
+    return `override for ${override.acmeId} ignored: ${override.pulleyId} is ${target.isPathfinder ? "pathfinder" : "signage"}, excluded by the brief`;
+  }
+  // The brief's non-negotiable rules still apply to human decisions, and
+  // upstream facts can change after a decision was recorded.
+  const blocker = acme ? reconfirmationNeeded(acme, target) : null;
+  if (blocker) {
+    return `override for ${override.acmeId} needs reconfirmation: ${blocker}; the matcher's decision was kept`;
+  }
+  return null;
+}
+
+/** Why a recorded match can no longer be applied as-is, or null when it still holds. */
+function reconfirmationNeeded(acme: AcmeProject, target: PulleyRecord): string | null {
+  if (acme.banner !== null && target.banner !== acme.banner) {
+    return `${target.id} is ${target.organization}, the Acme site is ${acme.banner}`;
+  }
+  const state = acmeState(acme);
+  if (state !== null && target.state !== state) {
+    return `${target.id} is in ${target.state}, the Acme site is in ${state}`;
+  }
+  const verdict = statusVerdict(acme.status, target.status);
+  if (verdict === StatusVerdict.Conflict) {
+    return `Acme is now ${acme.status} and ${target.id} is ${target.status}; canceled only counts on both sides`;
+  }
+  if (verdict === StatusVerdict.Unknown) {
+    return `status "${target.status}" or "${acme.status}" has no known meaning`;
+  }
+  return null;
 }
 
 /** Rebuild the derived parts of a report after decisions change. */

@@ -64,7 +64,12 @@ export class SiteLedgerClient {
       },
       { system: "siteledger", what: "SiteLedger sign-in" },
     );
-    const body: unknown = await response.json().catch(() => undefined);
+    let body: unknown;
+    try {
+      body = JSON.parse(response.text());
+    } catch {
+      body = undefined;
+    }
     const parsed = loginResponseSchema.safeParse(body);
     if (!parsed.success) {
       throw new SchemaError("SiteLedger sign-in succeeded but returned an unexpected body", {
@@ -81,7 +86,7 @@ export class SiteLedgerClient {
       { method: "GET", headers: { authorization: `Bearer ${session.token}` } },
       { system: "siteledger", what: `SiteLedger report "${id}"` },
     );
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes = response.bytes;
     if (bytes.byteLength === 0) {
       throw new SchemaError(`SiteLedger report "${id}" downloaded but is empty`);
     }

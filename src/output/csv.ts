@@ -77,6 +77,8 @@ export function renderDecisionsCsv(decisions: readonly MatchDecision[]): string 
   return stringify(sortDecisions(decisions).map(decisionRow), {
     header: true,
     columns: [...DECISION_COLUMNS],
+    // Names and notes are upstream free text; never let a cell start a formula.
+    escape_formulas: true,
   });
 }
 
@@ -93,5 +95,6 @@ export function renderUnmatchedPulleyCsv(report: MatchReport): string {
   return stringify(rows, {
     header: true,
     columns: ["pulley_project_id", "pulley_name", "pulley_status"],
+    escape_formulas: true,
   });
 }

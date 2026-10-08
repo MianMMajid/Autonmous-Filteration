@@ -63,6 +63,11 @@ pnpm test
   `reportDateSchema` accepts both on purpose; do not narrow it.
 - `data/overrides.csv` (optional) replaces matcher decisions with human ones
   and is validated on every run; see `docs/OPERATIONS.md`.
+- Run ids include milliseconds and run directories are created exclusively;
+  never add code that deletes or reuses an existing run directory.
+- The lock is created with `link` and stale locks are claimed with `rename`,
+  so recovery cannot delete a live owner's lock. Keep that protocol if you
+  touch `src/run/lock.ts`.
 - Ties in the matcher go to `needs_review`, never to a guess. See `docs/adr/0004`.
 - `docs/brief/` is gitignored because the original PDF contains live credentials.
 
