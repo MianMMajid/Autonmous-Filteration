@@ -34,7 +34,8 @@ fetched (a replay republishes old data), and its counts. It exits with code
 9 when either age exceeds its limit or nothing has been published. It needs
 no credentials. It verifies version 3 output integrity as well as timestamps.
 The scheduled workflow checks freshness after sync and sends a success heartbeat
-to a configured independent service only after backup and artifact upload.
+to a configured independent service only after verified publication and backup. Customer CSVs remain on the trusted
+host and approved backup storage, with no GitHub artifact upload.
 That service must detect missing runs and deliver alerts to the named operator
 and backup. `monitor docs/monitor.example.json` additionally checks scheduled
 publication obligations and source freshness across weekend gaps; see DEPLOYMENT.md.
@@ -148,8 +149,8 @@ not change that fingerprint. The first run after upgrading old output records
 resurfaces their pending cases once because no comparison fingerprint exists.
 Removed projects are reported separately from resolved reviews.
 
-The initial 41-row backlog on the October 8 archive needs an onboarding review;
-it is not a claim that the team will have 41 new cases every week. Actual weekly
+The initial 26-row backlog under rules 2026-10-08.8 on the October 8 archive needs an onboarding review;
+it is not a claim that the team will have 26 new cases every week. Actual weekly
 workload must be measured over fresh snapshots. Verified overrides retain prior
 decisions when evidence is still valid. Contradictory source facts require source
 correction; changing an override alone cannot waive the shared safety gate.
@@ -223,3 +224,12 @@ Nothing to prepare. Run `pnpm sync`; the summary shows the new counts and,
 because the previous run is kept, exactly which rows changed. To explain a
 single decision, find the row in `decisions.csv`: it carries the tier, the
 reason, and the top candidates with their evidence scores.
+
+### Reviewed soft discrepancies
+
+A matched override may resolve a street-name typo or milestone-date discrepancy,
+including a gap over 180 days, when its note explains the independent permit
+evidence checked. Record author and decision date too. Automatic matching still
+withholds these pairs. Explicit identity/year conflicts, another registered
+owner, scope/exclusions, status and assignment constraints remain enforced.
+See `DEPLOYMENT.md` for first-run crash recovery when no backup exists yet.

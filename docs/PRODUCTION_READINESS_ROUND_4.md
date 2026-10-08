@@ -1,5 +1,13 @@
 # Production readiness reassessment
 
+> Historical audit of the pre-precision 0.2.0 implementation. Its 332/18/50
+> counts, test totals, deployment descriptions and ratings are not current
+> release claims. Rules 2026-10-08.8 replay the same snapshot at **324 matched,
+> 26 review, 50 no-match**. See `VALIDATION.md` and `REVIEW_FOLLOWUP.md` for current
+> behavior and validation. The scheduled workflow no longer uploads customer
+> output artifacts to GitHub.
+
+
 Date: 2026-10-08. Audited revision: `9668e4b` (`siteledger-sync` 0.1.1).
 **Implementation update:** The three findings below are now addressed by the
 0.2.0 working-tree changes, with regression tests and a portable restore drill.

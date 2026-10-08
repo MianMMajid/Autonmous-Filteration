@@ -79,10 +79,10 @@ for the same store and type with no dates on either (3716, 6912, 5272,
 mismatches where the only project at the store is a different kind of
 work, and 1 weak locality candidate.
 
-## Current evidence — rules 2026-10-08.6
+## Historical precision audit — rules 2026-10-08.6
 
 The earlier sections are historical tuning notes, not a current accuracy
-assessment. The current replay produces 309 matched, 41 needs_review, and
+assessment. The replay at that revision produced 309 matched, 41 needs_review, and
 50 no_match out of 400. Automatic coverage is 77.25%; accuracy is not yet
 independently measured.
 
@@ -103,7 +103,7 @@ in `docs/adjudication/README.md`. Report false positives, denominators, label
 coverage, abstentions, and manual overrides separately. Even zero observed
 false positives on a fully reviewed snapshot does not guarantee future data.
 
-## Latest end-to-end verification
+## Historical live end-to-end verification — rules 2026-10-08.6
 
 A fresh live sync at 2026-10-08T19:21:16.612Z produced 309 matches,
 41 review rows, and 50 no-matches. Its publication ID is
@@ -123,3 +123,16 @@ All 377 tests across 27 files, lint, and typecheck pass. An offline replay of th
 latest live archive leaves the mapping byte-identical at 309/41/50, and the
 published pointer is unchanged. See `SYNTHETIC_AUDIT.md` for the cases, limits,
 and reproduction command.
+
+## Current replay — rules 2026-10-08.8
+
+The review follow-up narrows the temporal hold to ambiguous ownership. An offline
+replay of archive `2026-10-08T19-21-15-120Z` yields **324 matched, 26 review,
+50 no-match**, or **81% automatic coverage**. Fifteen formerly withheld rows now
+satisfy the single-Acme-project / unique-compatible-store-candidate exception.
+All seven evidence conflicts remain withheld. Existing matched targets and
+no-match decisions are unchanged. The published pointer remains on the earlier
+309/41/50 live run; this audit did not publish or fetch customer data.
+
+See `REVIEW_FOLLOWUP.md` for regression checks, performance and recovery details.
+Coverage is not correctness; independent adjudication is still outstanding.

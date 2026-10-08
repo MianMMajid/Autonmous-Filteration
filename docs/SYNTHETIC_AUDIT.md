@@ -1,5 +1,11 @@
 # Synthetic edge-case audit — rules 2026-10-08.7
 
+> Historical results for rules 2026-10-08.7. The seven automatic acceptance
+> regressions remain covered. Rules .8 allow explained human overrides of soft
+> street/milestone discrepancies and narrow the yearless hold; see
+> `REVIEW_FOLLOWUP.md` for current behavior and counts.
+
+
 This audit runs locally without contacting upstream systems or changing the
 published mapping. Seven new counterexamples were reproduced against the
 preceding implementation. Each was automatically accepted and passed the

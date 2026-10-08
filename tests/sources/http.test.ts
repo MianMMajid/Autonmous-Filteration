@@ -56,6 +56,33 @@ describe("HttpClient", () => {
     await expect(http.request("https://x.test/a", {}, ctx)).rejects.toThrow(/fetch failed/);
   });
 
+  it.each(["ENOTFOUND", "ECONNREFUSED", "CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID"])(
+    "retains safe network code %s without raw diagnostics",
+    async (code) => {
+      const cause = Object.assign(
+        new Error("https://user:private-value@example.test?token=private-value"),
+        { code },
+      );
+      const { http } = client([new TypeError("private-value", { cause })], 0);
+      const error = await http.request("https://x.test/a", {}, ctx).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(NetworkError);
+      expect((error as Error).message).toContain(code);
+      expect((error as Error).message).not.toContain("private-value");
+    },
+  );
+  it("handles aggregate and cyclic causes without printing arbitrary codes", async () => {
+    const nested = Object.assign(new Error("private-value"), { code: "PRIVATE_VALUE" });
+    nested.cause = nested;
+    const cause = new AggregateError([
+      nested,
+      Object.assign(new Error(), { code: "ECONNREFUSED" }),
+    ]);
+    const { http } = client([new TypeError("fetch failed", { cause })], 0);
+    const error = await http.request("https://x.test/a", {}, ctx).catch((e: unknown) => e);
+    expect((error as Error).message).toContain("ECONNREFUSED");
+    expect((error as Error).message).not.toMatch(/private-value|PRIVATE_VALUE/);
+  });
+
   it("does not retry other 4xx responses", async () => {
     const { mock, http } = client([status(418)]);
     await expect(http.request("https://x.test/a", {}, ctx)).rejects.toBeInstanceOf(NetworkError);

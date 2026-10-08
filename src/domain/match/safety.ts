@@ -13,6 +13,7 @@ import {
   temporalVerdict,
   typesCompatible,
 } from "./compat.ts";
+import type { SafetyIndex } from "./safety-index.ts";
 import { ReasonCode } from "./types.ts";
 
 export interface SafetyIssue {
@@ -32,17 +33,18 @@ export function acmeNameIssue(acme: AcmeProject): string | null {
 }
 
 /** Shared by automatic acceptance, overrides, and the publication boundary.
- * Missing evidence may be supplied by a human; contradictory evidence must
- * first be corrected in the source. This is a conservative gate, not proof
+ * Humans may resolve missing evidence, street typos and milestone delays;
+ * explicit identity contradictions must first be corrected in the source. This is a conservative gate, not proof
  * that every accepted pair is correct.
  */
 export function matchSafetyIssue(
   acme: AcmeProject,
   pulley: PulleyRecord,
-  register: readonly AcmeProject[],
+  index: SafetyIndex,
   automatic: boolean,
 ): SafetyIssue | null {
-  const issue = pairConflict(acme, pulley) ?? ownershipConflict(acme, pulley, register);
+  const register = index.related(acme, pulley);
+  const issue = pairConflict(acme, pulley, automatic) ?? ownershipConflict(acme, pulley, register);
   if (issue) return { reason: ReasonCode.EvidenceConflict, note: issue };
   const identifiedYear = register.some(
     (other) =>
@@ -52,10 +54,22 @@ export function matchSafetyIssue(
       other.programYear === acme.programYear &&
       namesProject(other, pulley),
   );
-  if (automatic && !identifiedYear && temporalVerdict(acme, pulley) === Temporal.Unknown) {
+  const uniqueStoreMatch =
+    automatic &&
+    !identifiedYear &&
+    temporalVerdict(acme, pulley) === Temporal.Unknown &&
+    storeMatches(acme, pulley) &&
+    index.siteProjects(acme).length === 1 &&
+    index.compatibleCandidates(acme).length === 1;
+  if (
+    automatic &&
+    !identifiedYear &&
+    !uniqueStoreMatch &&
+    temporalVerdict(acme, pulley) === Temporal.Unknown
+  ) {
     return {
       reason: ReasonCode.InsufficientEvidence,
-      note: "No exact full id or usable temporal evidence establishes this permit's program year",
+      note: "No exact full id or temporal evidence resolves ownership; the single-project, unique-store-candidate exception does not apply",
     };
   }
   if (
@@ -83,7 +97,7 @@ function competingYear(acme: AcmeProject, pulley: PulleyRecord, other: AcmeProje
   return ownGap === null || ownGap > 7 || (otherGap !== null && otherGap <= 7);
 }
 
-function pairConflict(acme: AcmeProject, pulley: PulleyRecord): string | null {
+function pairConflict(acme: AcmeProject, pulley: PulleyRecord, automatic: boolean): string | null {
   const sourceIssue = acmeNameIssue(acme);
   if (sourceIssue) return sourceIssue;
   if (pulley.parsedName.canceledMarker && !isPulleyCanceled(pulley.status))
@@ -101,10 +115,11 @@ function pairConflict(acme: AcmeProject, pulley: PulleyRecord): string | null {
     return "Pulley name also identifies another building, possibly absent from the register";
   if (!typesCompatible(acme.projectType, pulley.projectType))
     return "Project types do not describe compatible work";
-  if (temporalVerdict(acme, pulley) === Temporal.Conflict)
-    return "Project year evidence conflicts; confirm the permit's program year";
   if (pulley.parsedName.years.some((year) => year !== acme.programYear))
     return "Pulley name contains a conflicting program year";
+  if (!automatic) return null;
+  if (temporalVerdict(acme, pulley) === Temporal.Conflict)
+    return "Project date evidence conflicts; confirm the permit's program year";
   const distant = milestoneGaps(acme, pulley).filter((gap) => gap.days > 180);
   if (distant.length > 0)
     return `Corresponding milestones conflict: ${distant.map((g) => `${g.milestone} ${g.days} days apart`).join(", ")}`;

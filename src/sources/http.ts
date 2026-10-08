@@ -259,10 +259,46 @@ async function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   await delay(ms, undefined, signal ? { signal } : {});
 }
 
+const SAFE_NETWORK_CODES = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EPIPE",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "ERR_SSL_WRONG_VERSION_NUMBER",
+]);
+
 function describeFailure(error: unknown): string {
   if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
     return error.name;
-  return "fetch failed";
+  // Do not expose messages, URLs or arbitrary custom codes from thrown errors.
+  const codes = new Set<string>();
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number): void => {
+    if (!(value instanceof Error) || seen.has(value) || depth > 5) return;
+    seen.add(value);
+    const code = "code" in value ? value.code : null;
+    if (typeof code === "string" && SAFE_NETWORK_CODES.has(code)) codes.add(code);
+    visit(value.cause, depth + 1);
+    if (value instanceof AggregateError)
+      for (const nested of value.errors.slice(0, 16)) visit(nested, depth + 1);
+  };
+  visit(error, 0);
+  return codes.size ? `fetch failed (${[...codes].sort().join(", ")})` : "fetch failed";
 }
 
 async function boundedBody(response: Response, limit: number): Promise<Uint8Array> {

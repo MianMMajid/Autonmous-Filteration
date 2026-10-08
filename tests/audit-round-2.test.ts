@@ -122,7 +122,7 @@ describe("R2-04 and R2-06 disputed identity never raises confidence", () => {
       reason: ReasonCode.IdentityDisputed,
       pulleyId: null,
     });
-    expect(d?.note).toMatch(/conflicting content; provisional outcome needs_review/);
+    expect(d?.note).toMatch(/conflicting content; provisional outcome matched/);
   });
 
   it("conflicting Site Directory rows mark the project disputed in normalization", () => {
@@ -176,19 +176,29 @@ describe("R2-05 overrides cannot bypass assignment or temporal constraints", () 
     const loaded = parseOverrides(`${HEADER}1556.1003,prj_2027,matched,looks right to me\n`);
     const result = applyOverrides(report, loaded, { acme: register, pulley: [permit] });
     expect(result.applied).toBe(0);
-    expect(result.problems[0]).toMatch(/another program year/);
+    expect(result.problems[0]).toMatch(/conflicting program year/);
     expect(result.report.decisions.map((d) => d.status)).toEqual(["matched", "no_match"]);
   });
 
   it("withdraws an override that would share a permit across years with an automatic match", () => {
-    const permit = pulley({ id: "prj_store", name: "#1556 Reno, NV 2027", projectType: "Remodel" });
+    const permit = pulley({
+      id: "prj_store",
+      name: "#1556 Reno, NV",
+      projectType: "Remodel",
+      constructionStart: "2027-06-01",
+    });
     const register = [
-      acme({ sequence: 1002, programYear: 2027, projectType: "Remodel" }),
-      acme({ sequence: 1003, programYear: 2028, projectType: "EV Charging" }),
+      acme({
+        sequence: 1002,
+        programYear: 2027,
+        projectType: "Remodel",
+        dates: { constructionStart: "2027-06-01" },
+      }),
+      acme({ sequence: 1003, programYear: 2028, projectType: "Remodel" }),
     ];
     const report = matchProjects(inputs(register, [permit]));
     expect(report.decisions.map((d) => d.status)).toEqual(["matched", "no_match"]);
-    const loaded = parseOverrides(`${HEADER}1556.1003,prj_store,matched,\n`);
+    const loaded = parseOverrides(`${HEADER}1556.1003,prj_store,matched,reviewed timeline\n`);
     const result = applyOverrides(report, loaded, { acme: register, pulley: [permit] });
     expect(result.applied).toBe(0);
     expect(result.problems.join("\n")).toMatch(

@@ -1,15 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parse as parseCsv } from "csv-parse/sync";
-import {
-  acmeState,
-  isInScope,
-  StatusVerdict,
-  statusVerdict,
-  Temporal,
-  temporalVerdict,
-} from "../domain/match/compat.ts";
+import { acmeState, isInScope, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
 import { matchSafetyIssue } from "../domain/match/safety.ts";
+import { createSafetyIndex, type SafetyIndex } from "../domain/match/safety-index.ts";
 import type { MatchDecision, MatchReport, OutputStatus } from "../domain/match/types.ts";
 import { ReasonCode } from "../domain/match/types.ts";
 import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
@@ -182,6 +176,7 @@ export function applyOverrides(
   inputs: { readonly acme: readonly AcmeProject[]; readonly pulley: readonly PulleyRecord[] },
 ): AppliedOverrides {
   const { pulley } = inputs;
+  const safetyIndex = createSafetyIndex(inputs.acme, pulley);
   const problems = [...loaded.problems];
   const byAcme = new Map(report.decisions.map((d) => [d.acmeId, d]));
   const acmeById = new Map(inputs.acme.map((a) => [a.id, a]));
@@ -195,7 +190,7 @@ export function applyOverrides(
       problems.push(`override for ${override.acmeId} ignored: not in the Project Register`);
       continue;
     }
-    const problem = targetProblem(override, acmeById.get(override.acmeId), pulleyById, inputs.acme);
+    const problem = targetProblem(override, acmeById.get(override.acmeId), pulleyById, safetyIndex);
     if (problem) {
       problems.push(problem);
       continue;
@@ -306,7 +301,7 @@ function targetProblem(
   override: Override,
   acme: AcmeProject | undefined,
   pulleyById: ReadonlyMap<string, PulleyRecord>,
-  register: readonly AcmeProject[],
+  safetyIndex: SafetyIndex,
 ): string | null {
   if (override.pulleyId === null) return null;
   const target = pulleyById.get(override.pulleyId);
@@ -319,11 +314,18 @@ function targetProblem(
   // The brief's non-negotiable rules still apply to human decisions, and
   // upstream facts can change after a decision was recorded.
   const blocker = acme
-    ? (reconfirmationNeeded(acme, target) ?? matchSafetyIssue(acme, target, register, false)?.note)
+    ? (reconfirmationNeeded(acme, target) ??
+      matchSafetyIssue(acme, target, safetyIndex, false)?.note)
     : null;
   if (blocker) {
     return `override for ${override.acmeId} needs reconfirmation: ${blocker}; the matcher's decision was kept`;
   }
+  if (
+    acme &&
+    !override.note.trim() &&
+    matchSafetyIssue(acme, target, safetyIndex, true)?.reason === ReasonCode.EvidenceConflict
+  )
+    return `override for ${override.acmeId} needs reconfirmation: a note must explain the reviewed street or milestone discrepancy`;
   return null;
 }
 
@@ -335,9 +337,6 @@ function reconfirmationNeeded(acme: AcmeProject, target: PulleyRecord): string |
     return target.banner !== acme.banner
       ? `${target.id} is ${target.organization}, the Acme site is ${acme.banner ?? "unknown banner"}`
       : `${target.id} is in ${target.state}, the Acme site is in ${state ?? "an unknown state"}`;
-  }
-  if (temporalVerdict(acme, target) === Temporal.Conflict) {
-    return `${target.id} belongs to another program year than ${acme.id} (${acme.programYear}); one permit covers one year`;
   }
   const verdict = statusVerdict(acme.status, target.status);
   if (verdict === StatusVerdict.Conflict) {

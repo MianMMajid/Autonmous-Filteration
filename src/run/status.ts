@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { z } from "zod";
-import { SchemaError } from "../errors.ts";
+import { SchemaError, StaleError } from "../errors.ts";
 import { latestRunId, OUT_DIRNAME, readRunRecord } from "./outputs.ts";
 
 /**
@@ -32,7 +32,7 @@ export interface PublishedStatus {
   readonly outputDirectory: string;
 }
 
-/** Null when nothing has ever been published or the pointer is unreadable. */
+/** Null only for empty history; damaged history throws. */
 export async function readPublishedStatus(
   dataDir: string,
   now: Date = new Date(),
@@ -47,7 +47,7 @@ export async function readPublishedStatus(
   if (!publishedAt) throw new SchemaError("Publication time is missing");
   for (const timestamp of [publishedAt, record.sourceAcquiredAt]) {
     if (timestamp && Date.parse(timestamp) > now.getTime() + 300_000)
-      throw new SchemaError(
+      throw new StaleError(
         "Publication or source timestamp is in the future; check clock and metadata",
       );
   }

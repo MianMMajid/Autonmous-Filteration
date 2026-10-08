@@ -7,9 +7,14 @@ import { assertPublicationInvariants } from "../src/run/invariants.ts";
 import { applyOverrides, parseOverrides } from "../src/run/overrides.ts";
 import { acme, inputs, pulley } from "./domain/match/fixtures.ts";
 
-const counterexamples: Array<{ name: string; build: () => NormalizedInputs }> = [
+const counterexamples: Array<{
+  name: string;
+  humanResolvable?: boolean;
+  build: () => NormalizedInputs;
+}> = [
   {
     name: "a street named North collapsed into a street named N",
+    humanResolvable: true,
     build: () =>
       inputs(
         [acme({ street: "100 North Street" })],
@@ -30,6 +35,7 @@ const counterexamples: Array<{ name: string; build: () => NormalizedInputs }> = 
   },
   {
     name: "different buildings at the same base address",
+    humanResolvable: true,
     build: () =>
       inputs(
         [acme({ street: "100 Main St Building A" })],
@@ -55,28 +61,32 @@ const counterexamples: Array<{ name: string; build: () => NormalizedInputs }> = 
 ];
 
 describe("new synthetic counterexamples", () => {
-  it.each(counterexamples)("withholds $name at every acceptance boundary", ({ build }) => {
-    const n = build();
-    const report = matchProjects(n);
-    expect(report.counts.matched).toBe(0);
-    expect(() => assertPublicationInvariants(report.decisions, n.acme, n.pulley)).not.toThrow();
-    const decision = report.decisions[0],
-      target = n.pulley[0];
-    if (!decision || !target) throw new Error("missing fixture");
-    for (const reason of ["EXACT_ID", "OVERRIDE"] as const) {
-      expect(() =>
-        assertPublicationInvariants(
-          [{ ...decision, status: "matched", pulleyId: target.id, reason }],
-          n.acme,
-          n.pulley,
-        ),
-      ).toThrow();
-    }
-    const override = parseOverrides(
-      `acme_project_id,pulley_project_id,status,note\n${decision.acmeId},${target.id},matched,previously confirmed\n`,
-    );
-    expect(applyOverrides(report, override, n).applied).toBe(0);
-  });
+  it.each(counterexamples)(
+    "withholds automatic acceptance for $name",
+    ({ build, humanResolvable }) => {
+      const n = build();
+      const report = matchProjects(n);
+      expect(report.counts.matched).toBe(0);
+      expect(() => assertPublicationInvariants(report.decisions, n.acme, n.pulley)).not.toThrow();
+      const decision = report.decisions[0],
+        target = n.pulley[0];
+      if (!decision || !target) throw new Error("missing fixture");
+      for (const reason of ["EXACT_ID", "OVERRIDE"] as const) {
+        const check = () =>
+          assertPublicationInvariants(
+            [{ ...decision, status: "matched", pulleyId: target.id, reason }],
+            n.acme,
+            n.pulley,
+          );
+        if (humanResolvable && reason === "OVERRIDE") expect(check).not.toThrow();
+        else expect(check).toThrow();
+      }
+      const override = parseOverrides(
+        `acme_project_id,pulley_project_id,status,note\n${decision.acmeId},${target.id},matched,previously confirmed\n`,
+      );
+      expect(applyOverrides(report, override, n).applied).toBe(humanResolvable ? 1 : 0);
+    },
+  );
 
   it("retains Acme source disputes when no Pulley candidate exists", () => {
     const n = inputs([acme({ name: "2666.1002-RENO-NV-SUP-RM-2027" })], []);
