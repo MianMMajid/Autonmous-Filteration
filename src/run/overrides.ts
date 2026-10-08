@@ -9,6 +9,7 @@ import {
   Temporal,
   temporalVerdict,
 } from "../domain/match/compat.ts";
+import { matchSafetyIssue } from "../domain/match/safety.ts";
 import type { MatchDecision, MatchReport, OutputStatus } from "../domain/match/types.ts";
 import { ReasonCode } from "../domain/match/types.ts";
 import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
@@ -194,7 +195,7 @@ export function applyOverrides(
       problems.push(`override for ${override.acmeId} ignored: not in the Project Register`);
       continue;
     }
-    const problem = targetProblem(override, acmeById.get(override.acmeId), pulleyById);
+    const problem = targetProblem(override, acmeById.get(override.acmeId), pulleyById, inputs.acme);
     if (problem) {
       problems.push(problem);
       continue;
@@ -305,6 +306,7 @@ function targetProblem(
   override: Override,
   acme: AcmeProject | undefined,
   pulleyById: ReadonlyMap<string, PulleyRecord>,
+  register: readonly AcmeProject[],
 ): string | null {
   if (override.pulleyId === null) return null;
   const target = pulleyById.get(override.pulleyId);
@@ -316,7 +318,9 @@ function targetProblem(
   }
   // The brief's non-negotiable rules still apply to human decisions, and
   // upstream facts can change after a decision was recorded.
-  const blocker = acme ? reconfirmationNeeded(acme, target) : null;
+  const blocker = acme
+    ? (reconfirmationNeeded(acme, target) ?? matchSafetyIssue(acme, target, register, false)?.note)
+    : null;
   if (blocker) {
     return `override for ${override.acmeId} needs reconfirmation: ${blocker}; the matcher's decision was kept`;
   }

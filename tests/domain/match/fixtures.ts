@@ -34,9 +34,10 @@ export function acme(overrides: AcmeOverrides = {}): AcmeProject {
   const street = overrides.street ?? "100 Main St";
   const state = overrides.state ?? "NV";
   const city = overrides.city ?? "Reno";
+  const bannerCode = overrides.banner === Banner.WarehouseClub ? "WHC" : "SUP";
   const name =
     overrides.name ??
-    `${id}-${city.toUpperCase()}-${state}-SUP-RM-${overrides.programYear ?? 2027}`;
+    `${id}-${city.toUpperCase()}-${state}-${bannerCode}-RM-${overrides.programYear ?? 2027}`;
   const site: AcmeSite = {
     siteId: `ST-${store}`,
     banner: overrides.banner ?? Banner.Market,

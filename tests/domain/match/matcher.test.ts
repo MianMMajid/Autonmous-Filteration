@@ -144,7 +144,7 @@ describe("matchProjects: tier 2, store plus type and year", () => {
 
   it("resolves a renumbered store through the former location number", () => {
     const d = one({ store: 1556, formerLocationNumber: 4980 }, [
-      pulley({ id: "prj_old", name: "Acme | 4980, RENO, NV" }),
+      pulley({ id: "prj_old", name: "Acme | 4980, RENO, NV 2027" }),
     ]);
     expect(d).toMatchObject({ status: "matched", pulleyId: "prj_old" });
   });
@@ -228,6 +228,7 @@ describe("matchProjects: tier 2, store plus type and year", () => {
       city: "Worcester",
       state: "MA",
       formerLocationNumber: 4980,
+      street: "900 Oak Rd",
       projectType: "New Build",
     });
     const report = matchProjects(
@@ -236,7 +237,8 @@ describe("matchProjects: tier 2, store plus type and year", () => {
         [
           pulley({
             id: "prj_worc",
-            name: "Acme | 4980, WORCESTER, MA",
+            name: "Acme | 4980, WORCESTER, MA 2027",
+            street: "900 Oak Rd",
             jurisdictionCity: "Worcester",
             state: "MA",
             projectType: "New Build",
@@ -341,7 +343,7 @@ describe("matchProjects: tier 3 and 4, address and weak evidence", () => {
     const d = one({ street: "4329 E Peachtree Road" }, [
       pulley({
         id: "prj_addr",
-        name: "Acme Market – Reno, NV",
+        name: "Acme Market – Reno, NV 2027",
         street: "4329 E PEACHTREE RD, Suite A",
       }),
       pulley({ id: "prj_other", name: "Acme Market – Reno, NV", street: "1 Elsewhere Ave" }),
@@ -465,7 +467,7 @@ describe("matchProjects: audit cases", () => {
     );
     expect(report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual([
       ["4980.1001", "no_match", null],
-      ["1912.1001", "matched", "prj_w"],
+      ["1912.1001", "needs_review", null],
     ]);
   });
 
@@ -490,7 +492,7 @@ describe("matchProjects: audit cases", () => {
         [
           pulley({
             id: "prj_il",
-            name: "Springfield Seq 1002",
+            name: "Springfield Seq 1002 2027",
             jurisdictionCity: "Springfield",
             state: "IL",
           }),
@@ -524,7 +526,7 @@ describe("matchProjects: audit cases", () => {
     });
   });
 
-  it("lets the full id in the name pin the year when dates point elsewhere", () => {
+  it("holds both claims when an exact id and dates point to different years", () => {
     const project = pulley({
       id: "prj_x",
       name: "Acme Market 1556.1005 – Reno",
@@ -546,8 +548,8 @@ describe("matchProjects: audit cases", () => {
       ),
     );
     expect(report.decisions.map((d) => [d.acmeId, d.status, d.reason])).toEqual([
-      ["1556.1005", "matched", ReasonCode.ExactId],
-      ["1556.1007", "needs_review", ReasonCode.YearConflict],
+      ["1556.1005", "needs_review", ReasonCode.EvidenceConflict],
+      ["1556.1007", "needs_review", ReasonCode.EvidenceConflict],
     ]);
   });
 });
@@ -587,7 +589,7 @@ describe("matchProjects: acceptance policy and order invariance", () => {
     for (const report of [forward, backward]) {
       expect(
         report.decisions.every(
-          (d) => d.status === "needs_review" && d.reason === ReasonCode.YearConflict,
+          (d) => d.status === "needs_review" && d.reason === ReasonCode.InsufficientEvidence,
         ),
       ).toBe(true);
     }
@@ -612,13 +614,13 @@ describe("matchProjects: year conflicts across claims", () => {
     );
     expect(report.decisions.map((d) => [d.acmeId, d.status, d.reason])).toEqual([
       ["1556.1004", "matched", ReasonCode.ExactId],
-      ["1556.1005", "needs_review", ReasonCode.YearConflict],
+      ["1556.1005", "needs_review", ReasonCode.EvidenceConflict],
     ]);
-    expect(report.decisions[1]?.note).toMatch(/also claimed by 1556.1004 \(2027\)/);
+    expect(report.decisions[1]?.note).toMatch(/explicitly identifies 1556.1004/);
   });
 
   it("allows several lines from the same year to share one permit", () => {
-    const store = pulley({ id: "prj_store", name: "#1556 Reno, NV", projectType: "Remodel" });
+    const store = pulley({ id: "prj_store", name: "#1556 Reno, NV 2027", projectType: "Remodel" });
     const report = matchProjects(
       inputs(
         [
@@ -671,7 +673,7 @@ describe("matchProjects: status drift and shared streets", () => {
         [
           pulley({
             id: "prj_lv",
-            name: "Acme Market – Las Vegas, NV",
+            name: "Acme Market – Las Vegas, NV 2027",
             jurisdictionCity: "Las Vegas",
             street: "100 Main St",
           }),
@@ -740,9 +742,18 @@ describe("matchProjects on the real dataset", () => {
     expect(matchProjects(normalized)).toEqual(report);
   });
 
-  it("matches most rows and keeps review manageable", () => {
-    expect(report.counts.matched).toBeGreaterThanOrEqual(320);
-    expect(report.counts.needs_review).toBeLessThanOrEqual(30);
+  it("withholds the 23 audited unsafe acceptances rather than meeting a coverage quota", () => {
+    expect(report.counts).toEqual({ matched: 309, needs_review: 41, no_match: 50 });
+    for (const id of [
+      "1992.1000",
+      "5746.1003",
+      "5970.1004",
+      "3960.1001",
+      "6409.1005",
+      "2970.1008",
+    ]) {
+      expect(report.decisions.find((d) => d.acmeId === id)?.status, id).toBe("needs_review");
+    }
     expect(report.counts.matched + report.counts.needs_review + report.counts.no_match).toBe(400);
   });
 

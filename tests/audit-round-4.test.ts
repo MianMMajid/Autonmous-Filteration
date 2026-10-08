@@ -114,7 +114,7 @@ describe("R4 publication boundaries", () => {
     const record = JSON.parse(await readFile(path, "utf8"));
     record.version = 2;
     await writeFile(path, JSON.stringify(record));
-    expect((await loadPreviousRun(root))?.matched).toBe(332);
+    expect((await loadPreviousRun(root))?.matched).toBe(first.report.counts.matched);
     delete record.counts;
     await writeFile(path, JSON.stringify(record));
     await expect(loadPreviousRun(root)).rejects.toBeInstanceOf(SchemaError);
@@ -421,7 +421,7 @@ describe("deployment integration and publication commit failures", () => {
     await mkdir(join(root, "out/latest.json.tmp"));
     await expect(p.run("2026-10-08T11:00:00Z")).rejects.toBeInstanceOf(IoError);
     expect(await latestRunId(root)).toBe(first.runId);
-    expect((await loadPreviousRun(root))?.matched).toBe(332);
+    expect((await loadPreviousRun(root))?.matched).toBe(first.report.counts.matched);
   });
   it("excludes human overrides and unresolved labels from automatic precision", async () => {
     const p = pipeline(root);

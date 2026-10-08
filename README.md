@@ -26,7 +26,8 @@ verified directory for the current result. `latest` is a convenience link only:
 | File | What it is |
 |---|---|
 | `mapping.csv` | The deliverable. One row per Acme project: `acme_pcroject_id,pulley_project_id,status` |
-| `review.csv` | Only the `needs_review` rows, with the reason, a note, and the top candidates |
+| `review.csv` | Complete unresolved backlog, with reasons and candidates |
+| `review-changes.csv` | New or changed review cases since the immediately preceding run; not the weekly backlog |
 | `decisions.csv` | Every row with its evidence, for audit |
 | `pulley-unmatched.csv` | Pulley projects nobody claimed |
 | `summary.txt` | Counts, what changed since the previous run, the review list, status differences |
@@ -58,7 +59,8 @@ A failed run never overwrites the previous good output.
 the last result was published and whether it is older than a day.
 
 **Settling a review row.** Once your team decides, add one line to
-`overrides.csv` in this folder and it will not come back:
+`overrides.csv` in this folder. It is revalidated on each run; conflicting
+source changes can return the row to review:
 
 ```
 acme_project_id,pulley_project_id,status,note,author,decided_at

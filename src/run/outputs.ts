@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { MatchDecision } from "../domain/match/types.ts";
 import { IoError, SchemaError } from "../errors.ts";
 import type { PreviousDecision } from "../output/diff.ts";
+import { reviewFingerprint } from "../output/review.ts";
 import { RUN_ID_PATTERN } from "./archive.ts";
 import {
   OUTPUT_MANIFEST,
@@ -192,6 +193,10 @@ const previousDecisionSchema = z.looseObject({
   acmeId: z.string().min(1),
   status: z.enum(["matched", "needs_review", "no_match"]),
   pulleyId: z.string().nullable(),
+  reviewFingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
 
 const inputCountsSchema = z.object({
@@ -252,7 +257,10 @@ export interface RunRecordInput {
 }
 
 export function renderRunRecord(input: RunRecordInput): string {
-  return `${JSON.stringify({ version: 3, ...input }, null, 2)}\n`;
+  const decisions = input.decisions.map((d) =>
+    d.status === "needs_review" ? { ...d, reviewFingerprint: reviewFingerprint(d) } : d,
+  );
+  return `${JSON.stringify({ version: 3, ...input, decisions }, null, 2)}\n`;
 }
 
 export interface PreviousRun {
@@ -346,6 +354,7 @@ export async function loadPreviousRun(dataDir: string): Promise<PreviousRun | nu
       acmeId: d.acmeId,
       status: d.status,
       pulleyId: d.pulleyId,
+      ...(d.reviewFingerprint ? { reviewFingerprint: d.reviewFingerprint } : {}),
     })),
     inputCounts: record.inputs?.counts ?? null,
     matched:

@@ -33,7 +33,7 @@ City is never a filter (brief: jurisdiction city differs from Acme's city).
 
 Evaluated in order. The first tier with any candidate decides. Within that
 tier candidates are ranked by evidence (see Scoring); a unique best candidate
-wins, a tie produces `needs_review` with all candidates listed. Ranking and
+wins only if the shared safety gate passes; a tie produces `needs_review` with all candidates listed. Ranking and
 acceptance are separate: two candidates that differ only in soft
 corroboration (jurisdiction city, street name without house number) are a
 tie, because the brief says those names legitimately differ. Only hard evidence separates candidates for automatic acceptance, and the
@@ -79,19 +79,45 @@ the project. Otherwise, if store-identified projects exist in other years,
 the result is `no_match` with reason `UNRELATED_ONLY` and those projects
 listed, in preference to a tier 6 guess.
 
-**Assignment pass.** After every project is decided, any Pulley project
-claimed by Acme lines from different sites or program years (possible when
-the project has no dates to conflict with) is resolved across the register.
-The full id written in the name pins the project to that line's year and
-anchors the group; failing that, claims with dates within a week anchor it;
-failing that, the best-scored claim. Anchors of equal strength that disagree
-with each other (two full ids from different years on one name, or two
-lines with the same exact dates in different years) anchor nothing, and so
-does a tie among best scores: every claim goes to review, and input order
-can never pick a winner. Every non-anchored site-and-year claim goes to
-`needs_review` (`YEAR_CONFLICT`). Tests enforce that no Pulley project is
-ever assigned to two sites or two years and that decisions are invariant to
-the order of the register and the pool.
+**Normalization safeguards (rules 2026-10-08.7).** Bracketed prefixes remain
+part of identity, year, and signage extraction even when removed from display
+text. Every named store must be the project's current or verified former number;
+an additional building is a conflict even if missing from the register. Acme
+name/structured ID or year conflicts remain in review even with no candidate.
+Address keys retain building designators in both prefix and suffix forms. Street
+suffixes and directionals are normalized by position; words inside the street's
+proper name are preserved (North Street is not silently equated with N Street).
+
+**Safety gate (rules 2026-10-08.7).** Ranking is not sufficient for acceptance.
+`domain/match/safety.ts` is used by the matcher, overrides, and publication:
+
+- Exact IDs do not bypass temporal contradictions. Explicit year conflicts,
+  conflicting years in one name, or any corresponding milestone more than
+  180 days apart produce `EVIDENCE_CONFLICT`. The 180-day threshold is a
+  conservative review trigger, not proof of a wrong mapping. Submission uses
+  actual dates when available, otherwise projected dates.
+- A close milestone cannot hide other contradictory milestones. Name/field
+  disagreements about cancellation, signage, organization, or state also go
+  to review. Incompatible types and explicitly different buildings cannot be
+  forced through with an override.
+- A different street name, an exact address identifying another registered
+  building, or competing building evidence from dates blocks acceptance.
+  A house-number typo alone is not proof of a different building. A shared
+  current/former store number needs a unique exact address to establish the
+  building when compatible registered projects compete.
+- Explicit full IDs (including known former-number aliases) remain evidence
+  of ownership even if that owner's match is withheld or another candidate
+  wins for it. A conflicting site/year cannot inherit the permit silently.
+- Without a trusted full ID establishing the site/year, unknown temporal
+  evidence produces `INSUFFICIENT_EVIDENCE`. A human can supply missing
+  evidence using an override; contradictions require source correction first.
+
+**Assignment pass.** A Pulley project cannot be assigned across sites or
+program years. Full-ID anchors must agree; otherwise date anchors within
+seven days must agree. Without a unique strong anchor, every competing
+claim goes to review. Ranking scores (including street-name and city
+bonuses) never choose the winning building/year. Safety checks run before
+assignment, and the publication boundary checks accepted pairs again.
 
 **Shared street keys.** When two sites share a normalized street key, an
 address-tier match there also needs city agreement. Street name alone (the
@@ -99,7 +125,7 @@ weak tier) likewise needs the city.
 
 Store numbers in Pulley names are extracted by `normalize/name.ts`. A 4-digit
 token preceded by a store marker (`#`, `Store`, `Club`, `AM-`, `Acme`, `|`)
-is a store. An unmarked token in 2024 to 2035 is a year. Sequences found on
+is a store. An unmarked token in the supported program-year range 2000 to 2100 is a year. Sequences found on
 their own (`.1004`, `Seq 1005`, `Proj 1001`, trailing `(1001)`) are never
 treated as stores. Three real stores (2020, 2020, 2023) fall in the year
 range; they are recognized only when marked.
@@ -151,7 +177,9 @@ dates.
 
 | Situation | Result |
 |---|---|
-| One best candidate, compatible type, statuses agree | `matched` |
+| One best candidate, compatible type, statuses agree, safety gate passes | `matched` |
+| Contradictory identity, year, dates, or lifecycle evidence | `needs_review` (`EVIDENCE_CONFLICT`) |
+| No trusted full ID and no usable temporal evidence | `needs_review` (`INSUFFICIENT_EVIDENCE`) |
 | Several candidates tie, all canceled or all live | `needs_review` (`AMBIGUOUS`) |
 | Several tie, exactly one is live | the live one is `matched` |
 | Best candidate has incompatible type, and every candidate has a different sequence | `no_match` (`UNRELATED_ONLY`, other line) |
@@ -186,7 +214,7 @@ publishes anyway and records that choice in `run.json`.
 **Publication invariants.** After normalization, matching, the assignment
 pass, and human overrides, the combined result is checked once more before
 anything is written: one decision per register row; every matched row has
-an in-scope target that passes the status gate and is not disputed; no
+an in-scope target that passes the status and shared safety gates and is not disputed; no
 non-matched row carries a target; and no Pulley project is assigned to more
 than one building or year. A violation is a defect in the tool, exits with
 code 10, and publishes nothing. Overrides that would create such a conflict
@@ -194,7 +222,7 @@ are withdrawn with a reconfirmation message before this check runs.
 
 ## Status gate
 
-Applied to the winning candidate of tiers 1 to 3.
+Applied to every accepted match, including overrides.
 
 | Acme status | Pulley status | Result |
 |---|---|---|
@@ -248,13 +276,14 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 332 (tier 1: 97, tier 2: 197, tier 3: 16, tier 4: 14, tier 5: 8) |
-| needs_review | 18 (4 ambiguous, 4 status conflict, 3 type mismatch, 4 year conflict, 2 id outside scope, 1 weak) |
+| matched | 309 (tier 1: 92, tier 2: 180, tier 3: 15, tier 4: 14, tier 5: 8) |
+| needs_review | 41 (20 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
 | no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
-| status differences on matched rows | 33 (reported, not an outcome) |
+| status differences on matched rows | 29 (reported, not an outcome) |
 
-See `docs/VALIDATION.md` for the hand check behind these numbers and the
-match-rate estimate. Counts come from `tests/domain/match/matcher.test.ts`
+These are coverage counts, not an accuracy measurement. Twenty-three
+previously accepted rows are now withheld for review. See `docs/VALIDATION.md`
+for historical tuning and the remaining independent-validation requirement. Counts come from `tests/domain/match/matcher.test.ts`
 running the matcher over the archived fixtures; they will drift as the data
 changes.
 

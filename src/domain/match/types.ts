@@ -59,6 +59,10 @@ export const ReasonCode = {
   StatusUnknown: "STATUS_UNKNOWN",
   /** The Acme project's own identity is in dispute (conflicting source rows); it would have matched but is held for review. */
   IdentityDisputed: "IDENTITY_DISPUTED",
+  /** Independent source evidence disagrees; correct or verify the source first. */
+  EvidenceConflict: "EVIDENCE_CONFLICT",
+  /** Candidate lacks evidence required for automatic acceptance. */
+  InsufficientEvidence: "INSUFFICIENT_EVIDENCE",
 } as const;
 export type ReasonCode = (typeof ReasonCode)[keyof typeof ReasonCode];
 

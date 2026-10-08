@@ -20,6 +20,7 @@ import {
   typesEqual,
   yearSignal,
 } from "./compat.ts";
+import { acmeNameIssue, matchSafetyIssue } from "./safety.ts";
 import {
   type Candidate,
   type Evidence,
@@ -54,7 +55,7 @@ import {
  * Bump when a rule, weight, or tier changes. Recorded in run.json so a
  * historical decision can be attributed to the rules that produced it.
  */
-export const RULES_VERSION = "2026-10-08.5";
+export const RULES_VERSION = "2026-10-08.7";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
@@ -115,7 +116,7 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
  * by lines from different program years (possible when the project has no
  * dates to conflict with), keep the claims with strong evidence (exact id,
  * or dates within a week) and send the others to review. With no strong
- * claim, the best-scored claim's year is kept.
+ * claim, no building/year is guessed: every claim goes to review.
  */
 function resolveYearConflicts(
   decisions: readonly MatchDecision[],
@@ -155,8 +156,8 @@ function resolveYearConflicts(
 /**
  * Which site-and-year keys may keep a shared Pulley project. The full id
  * written in the name pins the project to that line; exact dates are next;
- * otherwise the best-scored claim, and if the best scores tie across keys,
- * nothing anchors, so input order can never pick a winner.
+ * otherwise nothing anchors. Ranking evidence alone cannot choose between
+ * buildings or program years, so input order can never pick a winner.
  */
 function anchorKeys(
   group: readonly MatchDecision[],
@@ -172,13 +173,7 @@ function anchorKeys(
   if (byId.length > 0) return single(byId);
   const byDates = group.filter(isStrongClaim);
   if (byDates.length > 0) return single(byDates);
-  return single(bestScored(group));
-}
-
-/** Claims sharing the top score; several when nothing separates them. */
-function bestScored(group: readonly MatchDecision[]): MatchDecision[] {
-  const best = Math.max(...group.map((d) => d.candidates[0]?.score ?? 0));
-  return group.filter((d) => (d.candidates[0]?.score ?? 0) === best);
+  return new Set();
 }
 
 function isStrongClaim(d: MatchDecision): boolean {
@@ -266,14 +261,15 @@ function memo(
 
 function decide(acme: AcmeProject, context: Context): MatchDecision {
   const decision = decideFromEvidence(acme, context);
-  if (acme.identityDisputed === null) return decision;
+  const sourceIssue = acme.identityDisputed ?? acmeNameIssue(acme);
+  if (sourceIssue === null) return decision;
   // Contradictory source rows must never raise confidence: hold the row.
   return review(
     acme,
     decision.candidates,
     decision.tier ?? Tier.ExactId,
     ReasonCode.IdentityDisputed,
-    `${acme.identityDisputed}; provisional outcome ${decision.status}${decision.pulleyId ? `; would otherwise match ${decision.pulleyId}` : ""}`,
+    `${sourceIssue}; provisional outcome ${decision.status}${decision.pulleyId ? `; would otherwise match ${decision.pulleyId}` : ""}`,
   );
 }
 
@@ -624,6 +620,9 @@ function strongDecision(
       `Acme is ${acme.status}, Pulley ${winner.pulleyId} is ${winner.pulleyStatus}`,
     );
   }
+  const target = context.pool.find((p) => p.id === winner.pulleyId);
+  const safety = target ? matchSafetyIssue(acme, target, context.acme, true) : null;
+  if (safety) return review(acme, candidates, tier, safety.reason, safety.note);
   return {
     ...base(acme, [winner, ...candidates.filter((c) => c !== winner)], tier),
     status: OutputStatus.Matched,

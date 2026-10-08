@@ -70,6 +70,31 @@ function run(fetch: ReturnType<typeof mockFetch>, now: string, dryRun = false) {
 }
 
 describe("runSync end to end", () => {
+  it("publishes a review delta without hiding the unresolved backlog", async () => {
+    const first = await run(upstreams(), "2026-10-08T10:00:00Z");
+    expect(await readFile(join(first.outputDirectory, "review-changes.csv"), "utf8")).toBe(
+      await readFile(join(first.outputDirectory, "review.csv"), "utf8"),
+    );
+    const second = await run(upstreams(), "2026-10-08T11:00:00Z");
+    expect(
+      (await readFile(join(second.outputDirectory, "review-changes.csv"), "utf8"))
+        .trim()
+        .split("\n"),
+    ).toHaveLength(1);
+    expect(second.report.counts.needs_review).toBe(first.report.counts.needs_review);
+    expect(second.summary).toContain(`${first.report.counts.needs_review} unchanged`);
+    const changed = await run(
+      upstreams((projects) => {
+        const p = projects.find((p) => p["id"] === "prj_ae5zai");
+        if (!p) throw new Error("missing fixture");
+        p["status"] = "In Progress";
+      }),
+      "2026-10-08T12:00:00Z",
+    );
+    const delta = await readFile(join(changed.outputDirectory, "review-changes.csv"), "utf8");
+    expect(delta).toContain("3716.1005");
+    expect(changed.summary).toContain("1 changed or lacking a comparison baseline");
+  });
   it("writes every output file, the run record, and the latest pointer", async () => {
     const outcome = await run(upstreams(), "2026-10-08T10:00:00Z");
     expect(outcome.runId).toBe("2026-10-08T10-00-00-000Z");
@@ -79,6 +104,7 @@ describe("runSync end to end", () => {
       "output-manifest.json",
       "overrides.snapshot.csv",
       "pulley-unmatched.csv",
+      "review-changes.csv",
       "review.csv",
       "run.json",
       "summary.txt",
@@ -177,7 +203,7 @@ describe("runSync end to end", () => {
 
   it("applies overrides and reports the ones it cannot apply", async () => {
     const first = await run(upstreams(), "2026-10-08T10:00:00Z");
-    const review = first.report.decisions.find((d) => d.status === "needs_review");
+    const review = first.report.decisions.find((d) => d.reason === "AMBIGUOUS");
     const target = review?.candidates[0]?.pulleyId;
     if (!review || !target) throw new Error("expected a review row with a candidate");
     await writeFile(
@@ -252,7 +278,7 @@ describe("runSync end to end", () => {
 
   it("reports review workload against the previous run", async () => {
     const first = await run(upstreams(), "2026-10-08T10:00:00Z");
-    const review = first.report.decisions.find((d) => d.status === "needs_review");
+    const review = first.report.decisions.find((d) => d.reason === "AMBIGUOUS");
     const target = review?.candidates[0]?.pulleyId;
     if (!review || !target) throw new Error("expected a review row with a candidate");
     await writeFile(

@@ -11,6 +11,7 @@ import {
   renderUnmatchedPulleyCsv,
 } from "../output/csv.ts";
 import { diffRuns, type RunDiff } from "../output/diff.ts";
+import { reviewWorkload } from "../output/review.ts";
 import { renderSummary } from "../output/summary.ts";
 import type { HttpClient } from "../sources/http.ts";
 import { implementationSha256, TOOL_VERSION } from "../version.ts";
@@ -164,12 +165,14 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     });
 
     const publishedAt = now().toISOString();
+    const reviewDelta = reviewWorkload(previous?.decisions ?? null, report.decisions);
     const written = await writeOutputs(config.dataDir, inputs.runId, {
       "overrides.snapshot.csv":
         loadedOverrides.snapshot ??
         "acme_project_id,pulley_project_id,status,note,author,decided_at\n",
       "mapping.csv": renderMappingCsv(report.decisions),
       "review.csv": renderReviewCsv(report.decisions),
+      "review-changes.csv": renderReviewCsv([...reviewDelta.fresh, ...reviewDelta.changed]),
       "decisions.csv": renderDecisionsCsv(report.decisions),
       "pulley-unmatched.csv": renderUnmatchedPulleyCsv(report),
       "summary.txt": summary,

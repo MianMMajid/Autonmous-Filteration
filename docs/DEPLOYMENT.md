@@ -60,7 +60,9 @@ node --env-file-if-exists=.env src/cli.ts status --json --max-age-hours 24 --max
 ```
 
 Version 3 run records require output integrity verification. Their manifest hashes
-all seven output files, including `run.json` and `overrides.snapshot.csv`. Status,
+all emitted output files, including `run.json`, `overrides.snapshot.csv`, and
+the additive `review-changes.csv`. Older version 3 publications without the
+review delta remain readable. Status,
 subsequent sync, backups, and artifact selection reject damaged version 3 outputs.
 Hashes detect corruption; they do not authenticate files against an attacker who
 can rewrite both files and manifests. Access control and a trusted backup store
@@ -71,7 +73,9 @@ Versions 1 and 2 remain readable for migration. Version 2 must contain its quali
 comparison fields; version 1 can derive its matched count from decisions. Legacy
 outputs lack the new artifact-integrity guarantee and cannot be exported by
 `published-path` or backed up until a supervised successful sync produces version 3.
-No matching rules changed in this release.
+Matching rules are versioned separately; current rules 2026-10-08.6 add
+precision safeguards described in MATCHING.md. New review fingerprints are
+optional on historical records; their absence resurfaces pending cases once.
 
 Missing `latest.json` with existing completed outputs is an error, not a first run.
 Never delete history to bypass the quality gate. Restore a known snapshot into a

@@ -38,8 +38,8 @@ describe("R2-01 conflicting strong anchors never allow a cross-year assignment",
       ),
     );
     expect(report.decisions.map((d) => [d.status, d.reason])).toEqual([
-      ["needs_review", ReasonCode.YearConflict],
-      ["needs_review", ReasonCode.YearConflict],
+      ["needs_review", ReasonCode.EvidenceConflict],
+      ["needs_review", ReasonCode.EvidenceConflict],
     ]);
   });
 
@@ -122,7 +122,7 @@ describe("R2-04 and R2-06 disputed identity never raises confidence", () => {
       reason: ReasonCode.IdentityDisputed,
       pulleyId: null,
     });
-    expect(d?.note).toMatch(/would otherwise match prj_nv/);
+    expect(d?.note).toMatch(/conflicting content; provisional outcome needs_review/);
   });
 
   it("conflicting Site Directory rows mark the project disputed in normalization", () => {
@@ -181,13 +181,13 @@ describe("R2-05 overrides cannot bypass assignment or temporal constraints", () 
   });
 
   it("withdraws an override that would share a permit across years with an automatic match", () => {
-    const permit = pulley({ id: "prj_store", name: "#1556 Reno, NV", projectType: "Remodel" });
+    const permit = pulley({ id: "prj_store", name: "#1556 Reno, NV 2027", projectType: "Remodel" });
     const register = [
       acme({ sequence: 1002, programYear: 2027, projectType: "Remodel" }),
       acme({ sequence: 1003, programYear: 2028, projectType: "EV Charging" }),
     ];
     const report = matchProjects(inputs(register, [permit]));
-    expect(report.decisions.map((d) => d.status)).toEqual(["matched", "needs_review"]);
+    expect(report.decisions.map((d) => d.status)).toEqual(["matched", "no_match"]);
     const loaded = parseOverrides(`${HEADER}1556.1003,prj_store,matched,\n`);
     const result = applyOverrides(report, loaded, { acme: register, pulley: [permit] });
     expect(result.applied).toBe(0);
@@ -220,6 +220,7 @@ describe("R2-07 acceptance uses the best decisive score, not the display order",
             projectType: "Remodel",
             street: "100 Main St",
             jurisdictionCity: "Washoe County",
+            constructionStart: "2027-04-01",
           }),
         ],
       ),
