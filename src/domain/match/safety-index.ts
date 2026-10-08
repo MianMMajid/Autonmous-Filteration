@@ -52,7 +52,14 @@ export function createSafetyIndex(register: readonly AcmeProject[], pool: readon
   }
   return {
     exactCandidates: (a: AcmeProject): readonly PulleyRecord[] =>
-      (candidateIds.get(scope(a.banner, acmeState(a), a.id)) ?? []).filter((p) => isInScope(a, p)),
+      [
+        ...new Set(
+          acmeStoreNumbers(a).flatMap(
+            (store) =>
+              candidateIds.get(scope(a.banner, acmeState(a), `${store}.${a.sequence}`)) ?? [],
+          ),
+        ),
+      ].filter((p) => isInScope(a, p)),
     storeCandidates: (a: AcmeProject): readonly PulleyRecord[] =>
       [
         ...new Set(

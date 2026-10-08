@@ -88,7 +88,7 @@ Address keys retain building designators in both prefix and suffix forms. Street
 suffixes and directionals are normalized by position; words inside the street's
 proper name are preserved (North Street is not silently equated with N Street).
 
-**Safety gate (rules 2026-10-08.9).** Ranking is not sufficient for acceptance.
+**Safety gate (rules 2026-10-08.10).** Ranking is not sufficient for acceptance.
 `domain/match/safety.ts` is used by the matcher, overrides, and publication:
 
 - Exact IDs do not bypass temporal contradictions. Explicit year conflicts,
@@ -114,10 +114,12 @@ proper name are preserved (North Street is not silently equated with N Street).
   wins for it. A conflicting site/year cannot inherit the permit silently.
 - Without a trusted full ID establishing the site/year, unknown temporal
   evidence produces `INSUFFICIENT_EVIDENCE`, except when there is exactly one
-  Acme project for the site and exactly one compatible candidate identified by
+  compatible Acme project for the selected permit and exactly one compatible candidate identified by
   its current/former store number. Address-, sequence-, and date-based competitors
-  count against this exception. Multiple Acme lines or compatible candidates still
-  need temporal evidence. Jurisdiction-city differences do not block a unique store.
+  count against this exception. Siblings with incompatible permit types, conflicting
+  lifecycle states or contradictory temporal evidence do not count as owners;
+  unknown sibling status remains unresolved. Multiple compatible Acme lines or
+  compatible candidates still need temporal evidence. Jurisdiction-city differences do not block a unique store.
 - A human override with an explanatory note can resolve a street-name or milestone
   discrepancy. Explicit year/identity conflicts, another registered owner,
   banner/state/exclusion/status rules and one-building/one-year assignment remain
@@ -290,12 +292,12 @@ so a disputed match can be audited.
 Same inputs produce byte-identical outputs. Candidate ordering is by Pulley
 id, never by map iteration order. A test enforces this.
 
-## Results on the 2026-10-08 dataset
+## Current offline results on the 2026-10-08 dataset
 
 | Outcome | Count |
 |---|---|
-| matched | 323 (tier 1: 92, tier 2: 194, tier 3: 14, tier 4: 15, tier 5: 8) |
-| needs_review | 27 (6 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
+| matched | 324 (tier 1: 93, tier 2: 194, tier 3: 14, tier 4: 15, tier 5: 8) |
+| needs_review | 26 (5 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
 | no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
 | status differences on matched rows | 29 (reported, not an outcome) |
 
@@ -304,7 +306,11 @@ requirement restores 15 unique store matches relative to rules 2026-10-08.7;
 all seven evidence-conflict holds remain. Rules .9 additionally withhold EV row 1679.1001: allowing umbrella permits
 introduces a second compatible candidate, so its undated dedicated EV permit
 no longer qualifies for the unique-candidate exception. See `docs/VALIDATION.md`
-for historical tuning and the remaining independent-validation requirement. Counts come from `tests/domain/match/matcher.test.ts`
+for historical tuning and the remaining independent-validation requirement.
+Rules .10 restore 3229.1005 because its siblings cannot own its dedicated EV
+permit; 2970.1008 still has a compatible competing owner and remains in review.
+A verified former full ID moves one existing match from tier 2 to tier 1 without
+changing its target. The published .9 snapshot is unchanged by this offline audit. Counts come from `tests/domain/match/matcher.test.ts`
 running the matcher over the archived fixtures; they will drift as the data
 changes.
 
@@ -333,3 +339,19 @@ changes.
 - 17 Acme store-and-year groups contain more than one row (39 rows).
 - Key Dates mixes two date formats: 1146 cells `MM/DD/YYYY`, 223 cells
   `YYYY-MM-DD`, 631 blank. Pulley dates are always ISO.
+
+## Review follow-up — rules 2026-10-08.10
+
+Full IDs using a verified former store number receive exact-ID evidence and
+can anchor ownership like current-number IDs. Reused-number collisions still
+require disambiguation and pass all shared safety checks. Unknown banner codes
+in free-text canonical names supply no banner evidence; known contradictory
+codes and mismatched structured banners remain blocked on either side.
+
+Address normalization also handles Town Center/Ctr before a street suffix,
+numbered Highway/Hwy and Route/Rte prefixes, and directionals on suffixless
+streets. A sole street name such as North Street or Center Street is preserved.
+Venue text is discarded before extracting building designators; a standalone
+`Building 3,` prefix is retained, while `Acme Building 3,` is venue text.
+Explicit building designators in the actual street address remain part of its
+identity. This is a conservative string normalizer, not a geocoder.

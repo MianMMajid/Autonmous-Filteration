@@ -30,6 +30,13 @@ export function typesEqual(acmeType: string, pulleyType: string): boolean {
   return typeKey(acmeType) === typeKey(pulleyType);
 }
 
+/** A full ID may use the verified current or former store number, never a sequence alone. */
+export function namesProject(acme: AcmeProject, pulley: PulleyRecord): boolean {
+  return acmeStoreNumbers(acme).some((store) =>
+    pulley.parsedName.fullIds.includes(`${store}.${acme.sequence}`),
+  );
+}
+
 /** Equal types, or a Pulley umbrella permit covering an absorbable Acme line. */
 export function typesCompatible(acmeType: string, pulleyType: string): boolean {
   const acme = typeKey(acmeType);

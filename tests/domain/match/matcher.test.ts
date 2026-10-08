@@ -743,7 +743,12 @@ describe("matchProjects on the real dataset", () => {
   });
 
   it("retains conflicting and ambiguous holds while allowing unique yearless store matches", () => {
-    expect(report.counts).toEqual({ matched: 323, needs_review: 27, no_match: 50 });
+    expect(report.counts).toEqual({ matched: 324, needs_review: 26, no_match: 50 });
+    expect(report.decisions.find((d) => d.acmeId === "3229.1005")).toMatchObject({
+      status: "matched",
+      pulleyId: "prj_v6stdf",
+    });
+    expect(report.decisions.find((d) => d.acmeId === "2970.1008")?.status).toBe("needs_review");
     for (const id of ["1992.1000", "5746.1003", "5970.1004", "3960.1001", "6409.1005"]) {
       expect(report.decisions.find((d) => d.acmeId === id)?.status, id).toBe("needs_review");
     }

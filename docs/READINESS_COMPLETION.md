@@ -1,4 +1,7 @@
-# Readiness completion — October 8, 2026
+# Readiness completion — October 8, 2026 (rules .9 snapshot)
+
+Subsequent fixes and offline .10 results are in [REVIEW_ROUND_6.md](REVIEW_ROUND_6.md).
+The publication, sample and drill below describe the recorded .9 implementation.
 
 The implementation now covers the brief's EV umbrella case, symmetric source
 contradictions, reviewer guidance, conflicting human decisions and a consistent

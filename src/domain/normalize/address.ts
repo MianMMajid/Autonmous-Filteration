@@ -106,11 +106,11 @@ const BUILDING_PATTERN = /\b(?:BLDG|BUILDING)\b\.?\s*#?\s*([A-Z0-9-]+)/g;
  */
 export function normalizeStreet(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
-  const upper = raw.toUpperCase();
+  const upper = dropVenuePrefix(raw.toUpperCase());
   // Buildings sharing a street address are not interchangeable. Preserve
   // designators even when they precede a comma and the house number.
   const buildings = [...new Set([...upper.matchAll(BUILDING_PATTERN)].map((m) => m[1]))].sort();
-  let text = dropVenuePrefix(upper).replace(BUILDING_PATTERN, " ");
+  let text = upper.replace(BUILDING_PATTERN, " ");
   text = text.replace(UNIT_PATTERN, " ").replace(HASH_UNIT_PATTERN, " ");
   text = text
     .replace(/[.,;:()'"]/g, " ")
@@ -132,20 +132,36 @@ export function normalizeStreet(raw: string | null | undefined): string | null {
  */
 function normalizeTokens(tokens: string[]): string[] {
   const last = tokens.length - 1;
-  const trailingDirection = tokens.length >= 4 && DIRECTIONALS[tokens[last] ?? ""] !== undefined;
+  const trailingDirection = tokens.length >= 3 && DIRECTIONALS[tokens[last] ?? ""] !== undefined;
   const suffix = trailingDirection ? last - 1 : last;
   const word = tokens[suffix] ?? "";
+  const hasSuffix = SUFFIXES[word] !== undefined;
   tokens[suffix] = SUFFIXES[word] ?? word;
   if (trailingDirection) tokens[last] = DIRECTIONALS[tokens[last] ?? ""] ?? "";
-  if (suffix > 2) tokens[1] = DIRECTIONALS[tokens[1] ?? ""] ?? tokens[1] ?? "";
+  const nameEnd = hasSuffix ? suffix - 1 : suffix;
+  if (nameEnd > 1) tokens[1] = DIRECTIONALS[tokens[1] ?? ""] ?? tokens[1] ?? "";
   if (
-    suffix > 3 &&
+    nameEnd > 2 &&
     (tokens[1] === "N" || tokens[1] === "S") &&
     ["E", "W", "EAST", "WEST"].includes(tokens[2] ?? "")
   ) {
     tokens[2] = DIRECTIONALS[tokens[2] ?? ""] ?? "";
   }
+  normalizeCompoundNames(tokens, hasSuffix ? suffix : null);
   return tokens;
+}
+
+function normalizeCompoundNames(tokens: string[], suffix: number | null): void {
+  for (let i = 1; i < tokens.length - 1; i++) {
+    const token = tokens[i] ?? "";
+    // Numbered routes use a prefix, rather than a final street suffix.
+    if (["HIGHWAY", "ROUTE"].includes(token) && HOUSE_NUMBER.test(tokens[i + 1] ?? ""))
+      tokens[i] = SUFFIXES[token] ?? token;
+    // Town Center Blvd is commonly abbreviated Town Ctr Blvd. Preserve a
+    // sole proper name such as Center Street and all other internal words.
+    if (suffix !== null && i > 1 && i < suffix && ["CENTER", "CENTRE"].includes(token))
+      tokens[i] = "CTR";
+  }
 }
 
 /**
@@ -173,7 +189,10 @@ function dropVenuePrefix(text: string): string {
   if (segments.length < 2) return text;
   const index = segments.findIndex((segment) => /^\s*\d+[A-Z]?\s+\S/.test(segment));
   if (index <= 0) return text;
-  return segments.slice(index).join(",");
+  const buildings = segments
+    .slice(0, index)
+    .filter((segment) => /^\s*(?:BLDG|BUILDING)\.?\s*#?\s*[A-Z0-9-]+\s*$/.test(segment));
+  return [...segments.slice(index), ...buildings].join(",");
 }
 
 /** "N E" (from "N.E.") becomes "NE"; only single-letter pairs are merged. */

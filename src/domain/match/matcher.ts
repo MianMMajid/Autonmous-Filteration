@@ -7,6 +7,7 @@ import {
   dateProximityDays,
   isInScope,
   isPulleyCanceled,
+  namesProject,
   StatusVerdict,
   sequenceRelation,
   statusDrift,
@@ -56,7 +57,7 @@ import {
  * Bump when a rule, weight, or tier changes. Recorded in run.json so a
  * historical decision can be attributed to the rules that produced it.
  */
-export const RULES_VERSION = "2026-10-08.9";
+export const RULES_VERSION = "2026-10-08.10";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
@@ -337,9 +338,7 @@ function decideFromEvidence(acme: AcmeProject, context: Context): MatchDecision 
 
   // The exact id on a project of the other banner or state is most likely a
   // data-entry error in Pulley; a human should see it rather than "no match".
-  const outside = context.pool.filter(
-    (p) => p.parsedName.fullIds.includes(acme.id) && !scoped.includes(p),
-  );
+  const outside = context.pool.filter((p) => namesProject(acme, p) && !scoped.includes(p));
   if (outside.length > 0) {
     const where = outside
       .map((p) => `${p.id} is ${p.banner ?? p.organization} in ${p.state}`)
@@ -377,8 +376,16 @@ function isExactIdCandidate(
   pulley: PulleyRecord,
   sharedNumbers: ReadonlySet<string>,
 ): boolean {
-  if (!pulley.parsedName.fullIds.includes(acme.id)) return false;
-  if (!sharedNumbers.has(collisionKey(acme.banner, acmeState(acme), acme.store))) return true;
+  if (!namesProject(acme, pulley)) return false;
+  const namedStores = acmeStoreNumbers(acme).filter((store) =>
+    pulley.parsedName.fullIds.includes(`${store}.${acme.sequence}`),
+  );
+  if (
+    namedStores.every(
+      (store) => !sharedNumbers.has(collisionKey(acme.banner, acmeState(acme), store)),
+    )
+  )
+    return true;
   return localityAgrees(acme, pulley);
 }
 
@@ -500,7 +507,7 @@ function isWeakCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
 
 function toCandidate(acme: AcmeProject, pulley: PulleyRecord, tier: Tier): Candidate {
   const evidence: Evidence = {
-    exactId: pulley.parsedName.fullIds.includes(acme.id),
+    exactId: namesProject(acme, pulley),
     storeMatch: storeMatches(acme, pulley),
     proximityDays: dateProximityDays(acme, pulley),
     temporal: temporalVerdict(acme, pulley),
@@ -719,9 +726,7 @@ function weakDecision(acme: AcmeProject, candidates: readonly Candidate[]): Matc
 }
 
 function noCandidate(acme: AcmeProject, excluded: readonly PulleyRecord[]): MatchDecision {
-  const onlyExcluded = excluded.filter(
-    (p) => p.parsedName.fullIds.includes(acme.id) || storeMatches(acme, p),
-  );
+  const onlyExcluded = excluded.filter((p) => namesProject(acme, p) || storeMatches(acme, p));
   if (onlyExcluded.length > 0) {
     const what = onlyExcluded
       .map((p) => `${p.id} (${p.isPathfinder ? "pathfinder" : "signage"})`)

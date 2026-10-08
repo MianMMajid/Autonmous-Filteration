@@ -17,7 +17,11 @@ export interface SummaryInput {
   readonly normalized: NormalizedInputs;
   readonly report: MatchReport;
   readonly diff: RunDiff;
-  readonly overrides: { readonly applied: number; readonly problems: readonly string[] };
+  readonly overrides: {
+    readonly applied: number;
+    readonly problems: readonly string[];
+    readonly path: string;
+  };
   readonly quality: QualityAssessment & { readonly accepted: boolean };
   readonly previousDecisions: readonly PreviousDecision[] | null;
   readonly rulesVersion: string;
@@ -159,7 +163,7 @@ function statusDriftSection(report: MatchReport): string[] {
 function overridesSection(o: SummaryInput["overrides"]): string[] {
   if (o.applied === 0 && o.problems.length === 0) return [];
   return [
-    `Overrides: ${o.applied} applied from data/overrides.csv` +
+    `Overrides: ${o.applied} applied from ${o.path}` +
       (o.problems.length > 0 ? `, ${o.problems.length} could not be applied:` : ""),
     ...o.problems.map((problem) => `  ${problem}`),
   ];
@@ -193,6 +197,9 @@ function filesSection(outputDirectory: string): string[] {
     "  decisions.csv         every row with evidence, for audit",
     "  pulley-unmatched.csv  Pulley projects nobody claimed",
     "  run.json              machine-readable record used for the next run's diff",
+    "  handoff.md            run-specific counts, provenance and draft Account Lead response",
+    "  overrides.snapshot.csv exact human decisions used for this run",
+    "  output-manifest.json  hashes and byte lengths for integrity verification",
     "  summary.txt           this text",
   ];
 }
