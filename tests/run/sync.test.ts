@@ -76,6 +76,8 @@ describe("runSync end to end", () => {
     expect((await readdir(outcome.outputDirectory)).sort()).toEqual([
       "decisions.csv",
       "mapping.csv",
+      "output-manifest.json",
+      "overrides.snapshot.csv",
       "pulley-unmatched.csv",
       "review.csv",
       "run.json",
@@ -215,7 +217,7 @@ describe("runSync end to end", () => {
   it("records provenance in run.json and can replay a chosen historical run", async () => {
     const first = await run(upstreams(), "2026-10-08T10:00:00Z");
     const record = JSON.parse(await readFile(join(first.outputDirectory, "run.json"), "utf8"));
-    expect(record.version).toBe(2);
+    expect(record.version).toBe(3);
     expect(record.rulesVersion).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     expect(record.toolVersion).toMatch(/^\d+\.\d+\.\d+$/);
     expect(record.inputs.counts).toEqual({

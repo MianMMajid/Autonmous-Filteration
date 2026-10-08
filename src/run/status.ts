@@ -1,7 +1,7 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { LATEST_POINTER, OUT_DIRNAME, RUN_RECORD } from "./outputs.ts";
+import { SchemaError } from "../errors.ts";
+import { latestRunId, OUT_DIRNAME, readRunRecord } from "./outputs.ts";
 
 /**
  * Freshness of the last published result. Used by `cli status`, which a
@@ -9,7 +9,6 @@ import { LATEST_POINTER, OUT_DIRNAME, RUN_RECORD } from "./outputs.ts";
  * result is simply old".
  */
 
-const latestPointerSchema = z.object({ runId: z.string().min(1) });
 const recordSchema = z.looseObject({
   runId: z.string().min(1),
   publishedAt: z.iso.datetime().optional(),
@@ -38,30 +37,20 @@ export async function readPublishedStatus(
   dataDir: string,
   now: Date = new Date(),
 ): Promise<PublishedStatus | null> {
-  const outRoot = join(dataDir, OUT_DIRNAME);
-  let runId: string;
-  try {
-    const pointer = latestPointerSchema.safeParse(
-      JSON.parse(await readFile(join(outRoot, LATEST_POINTER), "utf8")),
-    );
-    if (!pointer.success) return null;
-    runId = pointer.data.runId;
-  } catch {
-    return null;
-  }
-  const outputDirectory = join(outRoot, runId);
-  let record: z.output<typeof recordSchema>;
-  try {
-    const parsed = recordSchema.safeParse(
-      JSON.parse(await readFile(join(outputDirectory, RUN_RECORD), "utf8")),
-    );
-    if (!parsed.success) return null;
-    record = parsed.data;
-  } catch {
-    return null;
-  }
+  const runId = await latestRunId(dataDir);
+  if (runId === null) return null;
+  const outputDirectory = join(dataDir, OUT_DIRNAME, runId);
+  const parsed = recordSchema.safeParse(await readRunRecord(dataDir, runId));
+  if (!parsed.success) throw new SchemaError("Published run has invalid freshness metadata");
+  const record = parsed.data;
   const publishedAt = record.publishedAt ?? record.createdAt;
-  if (!publishedAt) return null;
+  if (!publishedAt) throw new SchemaError("Publication time is missing");
+  for (const timestamp of [publishedAt, record.sourceAcquiredAt]) {
+    if (timestamp && Date.parse(timestamp) > now.getTime() + 300_000)
+      throw new SchemaError(
+        "Publication or source timestamp is in the future; check clock and metadata",
+      );
+  }
   const hoursSince = (iso: string): number =>
     Math.max(0, (now.getTime() - Date.parse(iso)) / 3_600_000);
   const ageHours = hoursSince(publishedAt);

@@ -45,6 +45,7 @@ export interface Override {
 }
 
 export interface LoadedOverrides {
+  readonly snapshot?: string;
   readonly overrides: readonly Override[];
   readonly problems: readonly string[];
   /** Where the decisions came from and what exactly they said, for the run record. */
@@ -65,6 +66,7 @@ export async function loadOverrides(path: string): Promise<LoadedOverrides> {
   const parsed = parseOverrides(text, path);
   return {
     ...parsed,
+    snapshot: text,
     source: {
       path,
       sha256: createHash("sha256").update(text).digest("hex"),

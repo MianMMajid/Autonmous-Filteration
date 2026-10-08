@@ -11,5 +11,10 @@ fi
 [ -d node_modules ] || pnpm install
 pnpm sync
 status=$?
-if [ $status -eq 0 ]; then open "data/out/latest" 2>/dev/null; else echo; echo "The sync failed with exit code $status (see README for what it means)."; fi
+if [ $status -eq 0 ]; then
+  output_dir=$(node --env-file-if-exists=.env src/cli.ts published-path)
+  if [ $? -eq 0 ]; then open "$output_dir" 2>/dev/null; else echo "Publication verification failed; inspect the error above."; fi
+else
+  echo; echo "The sync failed with exit code $status (see README for what it means)."
+fi
 echo; read -r -p "Press Enter to close."

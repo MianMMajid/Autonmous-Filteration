@@ -1,8 +1,8 @@
-import type { Config } from "../config.ts";
+import { type Config, isLiveConfig, type LocalConfig } from "../config.ts";
 import { matchProjects, RULES_VERSION } from "../domain/match/matcher.ts";
 import type { MatchReport } from "../domain/match/types.ts";
 import { normalizeInputs } from "../domain/normalize/build.ts";
-import { IoError, QualityError } from "../errors.ts";
+import { QualityError, toError } from "../errors.ts";
 import type { Logger } from "../logger.ts";
 import {
   renderDecisionsCsv,
@@ -15,6 +15,7 @@ import { renderSummary } from "../output/summary.ts";
 import type { HttpClient } from "../sources/http.ts";
 import { implementationSha256, TOOL_VERSION } from "../version.ts";
 import { type AcquireOptions, acquireInputs } from "./acquire.ts";
+import { verifyOutputDirectory } from "./integrity.ts";
 import { assertPublicationInvariants } from "./invariants.ts";
 import { acquireLock } from "./lock.ts";
 import {
@@ -38,7 +39,7 @@ import { assessInputQuality, type QualityAssessment } from "./quality.ts";
  */
 
 export interface SyncOptions {
-  readonly config: Config;
+  readonly config: Config | LocalConfig;
   readonly log: Logger;
   readonly dryRun: boolean;
   /** With dryRun: replay this archived run instead of the newest one. */
@@ -84,6 +85,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
   const now = options.now ?? (() => new Date());
   const lock = await acquireLock(config.dataDir);
   try {
+    const previous = await loadPreviousRun(config.dataDir);
     const implementation = await implementationSha256();
     const acquireOptions: AcquireOptions = {
       config,
@@ -125,7 +127,6 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     const report = overrides.report;
     assertPublicationInvariants(report.decisions, normalized.acme, normalized.pulley);
 
-    const previous = await loadPreviousRun(config.dataDir);
     const counts = {
       acmeProjects: inputs.acme.projects.length,
       acmeSites: inputs.acme.sites.length,
@@ -164,6 +165,9 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
 
     const publishedAt = now().toISOString();
     const written = await writeOutputs(config.dataDir, inputs.runId, {
+      "overrides.snapshot.csv":
+        loadedOverrides.snapshot ??
+        "acme_project_id,pulley_project_id,status,note,author,decided_at\n",
       "mapping.csv": renderMappingCsv(report.decisions),
       "review.csv": renderReviewCsv(report.decisions),
       "decisions.csv": renderDecisionsCsv(report.decisions),
@@ -180,8 +184,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
         implementationSha256: implementation,
         inputs: { archiveDirectory: inputs.archiveDirectory, files: inputs.archiveFiles, counts },
         config: {
-          siteLedgerBaseUrl: config.siteLedger.baseUrl,
-          pulleyBaseUrl: config.pulley.baseUrl,
+          ...sourceUrls(config),
           dataDir: config.dataDir,
           overridesFile: config.overridesFile,
           retainRuns: config.retainRuns,
@@ -203,7 +206,9 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
         warnings: [...inputs.warnings, ...normalized.warnings],
       }),
     });
-    await updateLatest(config.dataDir, inputs.runId);
+    await verifyOutputDirectory(written, inputs.runId);
+    const aliasWarning = await updateLatest(config.dataDir, inputs.runId);
+    if (aliasWarning) log.warn(aliasWarning);
     log.info({ outputDirectory: written, changes: diff.counts }, "outputs published");
 
     // Retention runs after the commit point; its failure is reported, never fatal.
@@ -211,9 +216,10 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
       const pruned = await pruneRuns(config.dataDir, config.retainRuns);
       if (pruned.length > 0) log.info({ removed: pruned.length }, "old runs pruned");
     } catch (error) {
-      if (error instanceof IoError)
-        log.warn({ err: error.message }, "retention failed after publication; outputs are intact");
-      else throw error;
+      log.warn(
+        { error: toError(error).message },
+        "retention failed after publication; outputs are intact",
+      );
     }
 
     return { runId: inputs.runId, outputDirectory: written, summary, report, diff, quality };
@@ -222,9 +228,14 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
       await lock.release();
     } catch (error) {
       log.warn(
-        { error: error instanceof Error ? error.message : String(error) },
+        { error: toError(error).message },
         "lock cleanup failed; inspect the lock before the next run",
       );
     }
   }
+}
+
+function sourceUrls(config: LocalConfig | Config): Record<string, string> {
+  if (!isLiveConfig(config)) return { siteLedgerBaseUrl: "archive", pulleyBaseUrl: "archive" };
+  return { siteLedgerBaseUrl: config.siteLedger.baseUrl, pulleyBaseUrl: config.pulley.baseUrl };
 }

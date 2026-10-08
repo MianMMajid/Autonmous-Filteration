@@ -66,7 +66,7 @@ pnpm test
 - `overrides.csv` at the repo root (tracked) replaces matcher decisions with
   human ones; it is re-validated against banner, state, and the status gate on
   every run. `data/` is ignored and holds only run artifacts.
-- `run.json` is format version 2 with provenance (rules version, implementation
+- `run.json` is format version 3 with provenance (rules version, implementation
   content hash, input hashes, overrides hash). Bump `RULES_VERSION` in `matcher.ts` when a rule
   or weight changes.
 - Run ids include milliseconds and run directories are created exclusively;
@@ -79,7 +79,13 @@ pnpm test
 - `src/run/invariants.ts` is the publication boundary; every path that can
   change a decision (matcher, assignment pass, overrides) is checked there.
   Add new hard rules to it, not only to the path that first needs them.
-- `cli status` must never require credentials; it uses `loadLocalConfig`.
+- Local commands (status, monitor, replay, backup, restore, evaluate) never require
+  upstream credentials. Existing damaged history fails closed; only empty output
+  history is a bootstrap. Never treat an unreadable baseline as a first run.
+- Version 3 outputs have a required hash manifest. All consumers resolve the JSON
+  pointer and verify the immutable directory; the symlink is never authoritative.
+- Scheduled deployment is opt-in on a trusted persistent host; see
+  `docs/DEPLOYMENT.md`. Never reintroduce customer reports into Actions caches.
 - Ties in the matcher go to `needs_review`, never to a guess. See `docs/adr/0004`.
 - `docs/brief/` is gitignored because the original PDF contains live credentials.
 

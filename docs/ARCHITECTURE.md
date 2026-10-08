@@ -86,15 +86,15 @@ Defined in `src/errors.ts`.
 data/
   raw/<run-id>/            exact bytes downloaded (reports, API pages) for replay
   out/<run-id>/            mapping.csv, review.csv, decisions.csv,
-                           pulley-unmatched.csv, summary.txt, run.json
+                           pulley-unmatched.csv, summary.txt, run.json,
+                           overrides.snapshot.csv, output-manifest.json
   out/<run-id>.partial/    in-progress run; renamed to <run-id> only when complete
   out/latest.json          { "runId": ... } of the last successful run
   out/latest -> <run-id>   convenience symlink where the filesystem allows it
   .lock                    present while a run is active; holds the owner pid
-  overrides.csv            optional human decisions, applied after matching
 ```
 
-`run.json` (format version 2) records the tool version, rules version,
+`run.json` (format version 3) records the tool version, rules version,
 implementation SHA-256 (source files, package metadata, dependency lockfile),
 input counts and per-file SHA-256 hashes, the non-secret configuration, the
 input-quality assessment, the overrides file hash and the matcher's decision
@@ -106,6 +106,12 @@ publication and its failure is reported, never fatal.
 `run-id` is an ISO timestamp in UTC. `--dry-run` reads the newest `raw/`
 directory instead of contacting either system, so matching logic can be
 iterated offline and reproduced exactly.
+
+Version 3 output manifests verify file hashes before consumption. Missing or
+corrupted prior state blocks publication; it never silently disables the quality
+gate. New local-only commands provide immutable output resolution, verified
+backup/restore, schedule-aware monitoring and independent-label evaluation.
+Deployment and format migration are described in `DEPLOYMENT.md`.
 
 ## Toolchain
 

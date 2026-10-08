@@ -104,9 +104,7 @@ describe("HttpClient", () => {
       /cursor parameter is not valid/,
     );
     const plain = client([new Response("Service unavailable, try later", { status: 418 })]);
-    await expect(plain.http.request("https://x.test/a", {}, ctx)).rejects.toThrow(
-      /Service unavailable/,
-    );
+    await expect(plain.http.request("https://x.test/a", {}, ctx)).rejects.toThrow(/HTTP 418/);
   });
 
   it("redacts query strings in error details", async () => {

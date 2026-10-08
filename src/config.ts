@@ -28,11 +28,17 @@ const localSchema = z.object({
   OVERRIDES_FILE: z.string().trim().min(1).default("./overrides.csv"),
 });
 
+const endpoint = z.url().refine((value) => {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash;
+}, "must be an HTTPS URL without credentials, query, or fragment");
+
 const envSchema = localSchema.extend({
-  SITELEDGER_BASE_URL: z.url().default(DEFAULT_BASE_URL),
+  SITELEDGER_BASE_URL: endpoint.default(DEFAULT_BASE_URL),
   SITELEDGER_USERNAME: required("SITELEDGER_USERNAME"),
   SITELEDGER_PASSWORD: required("SITELEDGER_PASSWORD"),
-  PULLEY_BASE_URL: z.url().default(DEFAULT_BASE_URL),
+  PULLEY_BASE_URL: endpoint.default(DEFAULT_BASE_URL),
   PULLEY_API_KEY: required("PULLEY_API_KEY"),
 });
 
@@ -115,4 +121,9 @@ export function loadLocalConfig(env: NodeJS.ProcessEnv = process.env): LocalConf
 
 function stripTrailingSlash(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+/** Only live acquisition requires credentials. */
+export function isLiveConfig(config: LocalConfig | Config): config is Config {
+  return "siteLedger" in config && "pulley" in config;
 }

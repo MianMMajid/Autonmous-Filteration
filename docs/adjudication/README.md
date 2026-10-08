@@ -37,3 +37,28 @@ publishes; this file measures the tool and must not feed back into it.
    never tune on the rows you evaluate on.
 
 A template is in `expected-mapping.template.csv`.
+
+## Executable evaluation (0.2.0)
+
+```sh
+pnpm cli evaluate <output-run-id> docs/adjudication/expected-mapping.csv
+```
+
+Outputs JSON with label coverage, resolved/unresolved counts, automatic-match
+precision, false no-match rate, disagreements, and breakdowns by tier and reason.
+Counts and denominators accompany rates; no evaluated automatic matches gives
+`precision: null`, never 100%. Overrides are excluded from automatic accuracy.
+Review decisions are reported separately and are not counted as false automatic
+matches. No labels are written into production overrides or changed by evaluation.
+
+All seven template columns are required in that order. Every row requires a
+reviewer, valid decision date, source archive run ID, and rationale. Matched truth
+requires one or more allowed IDs; no-match truth requires none. Duplicate IDs,
+unknown Acme projects, malformed labels, and labels for a different source snapshot
+fail with exit 5. `source_run_id` means the archive ID, which can differ from a
+replay's output ID. The template intentionally fails validation until adjudicated.
+
+These descriptive metrics do not certify an independently selected holdout or
+statistical precision. Reviewers must document sampling and correlated store
+families, agree thresholds before evaluation, and adjudicate unseen data. This
+repository still contains no completed ground-truth set or production sign-off.

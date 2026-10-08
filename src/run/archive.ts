@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { IoError, SchemaError } from "../errors.ts";
+import { MAX_INPUT_BYTES } from "../sources/limits.ts";
 
 /**
  * Raw input archive: the exact bytes fetched during a run, plus a manifest.
@@ -195,6 +196,12 @@ export async function loadArchive(dataDir: string, runId: string): Promise<Loade
       details: { issues: parsed.error.issues.map((issue) => issue.message) },
     });
   }
+  if (
+    parsed.data.files.length > 203 ||
+    parsed.data.files.reduce((sum, file) => sum + file.bytes, 0) > 192 * 1024 * 1024 ||
+    parsed.data.files.some((file) => file.bytes > MAX_INPUT_BYTES)
+  )
+    throw new SchemaError("Archive exceeds supported file or byte limits");
   const names = parsed.data.files.map((file) => file.name);
   if (
     parsed.data.runId !== runId ||
@@ -213,8 +220,13 @@ export async function loadArchive(dataDir: string, runId: string): Promise<Loade
         throw new SchemaError(`Unsafe archive filename: ${file.name}`);
       let bytes: Uint8Array;
       try {
-        bytes = new Uint8Array(await readFile(join(directory, file.name)));
+        const path = join(directory, file.name);
+        const stat = await lstat(path);
+        if (!stat.isFile() || stat.size > MAX_INPUT_BYTES)
+          throw new SchemaError("Archive input is linked or exceeds byte limit");
+        bytes = new Uint8Array(await readFile(path));
       } catch (error) {
+        if (error instanceof SchemaError) throw error;
         throw new IoError(`Could not read archived file ${file.name}`, { cause: error });
       }
       if (file.sha256 !== undefined && sha256Hex(bytes) !== file.sha256) {

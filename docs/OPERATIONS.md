@@ -9,7 +9,7 @@ decisions so they stick.
 |---|---|
 | A laptop, by hand | `pnpm sync` in the repo folder, or double-click `sync.command` (macOS), which runs it and opens the output folder. The summary prints at the end. |
 | A laptop, on a schedule (macOS) | `crontab -e`, then `0 8,12,16 * * 1-5 cd /path/to/repo && /usr/local/bin/pnpm sync --quiet >> sync.log 2>&1` |
-| GitHub Actions | `.github/workflows/sync.yml` runs three times on weekdays and on demand. Add the three secrets in the repository settings. Outputs are attached to each run as an artifact and cached so the next run can diff against them. |
+| GitHub Actions | Opt-in persistent-host workflow, three times on weekdays at minute 17. Provision state, backups and an independent monitor as described in `DEPLOYMENT.md`; then set `SYNC_ENABLED=true`. |
 
 The run takes a few seconds. Two runs cannot overlap: the second exits with
 code 6 and a message naming the first.
@@ -32,11 +32,13 @@ may be before it must not be relied on.
 last published run, when it was published, when its *source data* was
 fetched (a replay republishes old data), and its counts. It exits with code
 9 when either age exceeds its limit or nothing has been published. It needs
-no credentials, so a scheduler can run it in a clean environment. The scheduled workflow runs it after
-every sync. GitHub notifies the repository's watchers when a workflow run
-fails, so a missed or failed publication reaches whoever watches the repo;
-set that to the operator and backup, or add a notification step to the
-workflow for the team's channel.
+no credentials. It verifies version 3 output integrity as well as timestamps.
+The scheduled workflow checks freshness after sync and sends a success heartbeat
+to a configured independent service only after backup and artifact upload.
+That service must detect missing runs and deliver alerts to the named operator
+and backup. `monitor docs/monitor.example.json` additionally checks scheduled
+publication obligations and source freshness across weekend gaps; see DEPLOYMENT.md.
+GitHub workflow notifications alone do not establish missed-run detection.
 
 A failed run and an old result are different things: a failed run exits
 non-zero and `latest.json` does not move; an old result is a successful run
@@ -62,9 +64,11 @@ that nobody has refreshed, which only `status` reveals.
   SHA-256 (source, package metadata, dependency lockfile), input hashes,
   configuration, the overrides file hash, and the matcher's decision for
   every row a human decision replaced.
-- **Drill.** Once, before relying on the tool: delete `data/out/latest.json`
-  on a copy, run `pnpm sync --replay <runId>`, and confirm the reproduced
-  `mapping.csv` is byte-identical to the archived one.
+- **Drill.** Create a verified backup with `pnpm cli backup <destination>`, restore
+  it into a new data directory with `pnpm cli restore <snapshot> <new-directory>`,
+  then replay with the snapshot's source/dependencies and overrides. Compare
+  mapping bytes. Do not delete `latest.json` to simulate a first run; damaged
+  history deliberately blocks publication. Full instructions: `DEPLOYMENT.md`.
 
 ## Reading the result
 
@@ -87,6 +91,9 @@ archive identities produce typed errors instead of silently replaying them.
 Lock-cleanup failures are warnings so they cannot mask a primary failure or
 turn a completed publication into a misleading failure; inspect the lock
 before running again.
+
+Use `pnpm cli published-path` to resolve the verified current output directory.
+The `latest` symlink is optional and may be stale after a failed refresh.
 
 Start with `summary.txt` (also printed to the terminal). It leads with the
 counts, then what changed since the previous run, then the review list.

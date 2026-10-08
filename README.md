@@ -20,8 +20,8 @@ lines them up by hand every Monday. One command, run as often as you like.
 pnpm sync
 ```
 
-Outputs land in `data/out/latest/` (every run also keeps its own
-`data/out/<timestamp>/` folder):
+Outputs land in `data/out/<timestamp>/`. `pnpm cli published-path` prints the
+verified directory for the current result. `latest` is a convenience link only:
 
 | File | What it is |
 |---|---|
@@ -30,7 +30,9 @@ Outputs land in `data/out/latest/` (every run also keeps its own
 | `decisions.csv` | Every row with its evidence, for audit |
 | `pulley-unmatched.csv` | Pulley projects nobody claimed |
 | `summary.txt` | Counts, what changed since the previous run, the review list, status differences |
-| `run.json` | Machine-readable record used for the next run's diff |
+| `run.json` | Provenance and decisions used for the next run’s quality gate and diff |
+| `output-manifest.json` | SHA-256 and byte length for every output |
+| `overrides.snapshot.csv` | Exact override input for replay and recovery |
 
 The summary is also printed to the terminal at the end of each run.
 
@@ -83,6 +85,8 @@ Zod, commander, pino, SheetJS (vendored), csv-parse/csv-stringify.
 
 Phases 0 to 4 complete: toolchain, docs, acquisition with raw archiving and
 offline replay, normalization, matching, and outputs with run-to-run diffs.
-All six phases complete. Validation is in `docs/VALIDATION.md`, operations
+The core workflow is implemented; unattended production release still requires
+independent accuracy labels, deployment configuration, alert delivery, and a
+restore drill. See `docs/DEPLOYMENT.md`. Validation is in `docs/VALIDATION.md`, operations
 in `docs/OPERATIONS.md`, and the submission notes in `docs/SUBMISSION.md`. See
 `CHANGELOG.md`.
