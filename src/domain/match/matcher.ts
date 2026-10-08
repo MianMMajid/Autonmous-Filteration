@@ -162,12 +162,17 @@ function anchorKeys(
   group: readonly MatchDecision[],
   keyOf: (d: MatchDecision) => string,
 ): Set<string> {
+  // Anchors of equal strength that disagree with each other anchor nothing:
+  // the dispute goes to review instead of letting both years through.
+  const single = (claims: readonly MatchDecision[]): Set<string> => {
+    const keys = new Set(claims.map(keyOf));
+    return keys.size === 1 ? keys : new Set();
+  };
   const byId = group.filter((d) => d.tier === Tier.ExactId);
-  if (byId.length > 0) return new Set(byId.map(keyOf));
+  if (byId.length > 0) return single(byId);
   const byDates = group.filter(isStrongClaim);
-  if (byDates.length > 0) return new Set(byDates.map(keyOf));
-  const keys = new Set(bestScored(group).map(keyOf));
-  return keys.size > 1 ? new Set() : keys;
+  if (byDates.length > 0) return single(byDates);
+  return single(bestScored(group));
 }
 
 /** Claims sharing the top score; several when nothing separates them. */
@@ -186,9 +191,15 @@ function streetsSharedBySites(inputs: NormalizedInputs): Set<string> {
   const seen = new Map<string, number>();
   for (const site of inputs.sites) {
     if (site.streetKey === null) continue;
-    seen.set(site.streetKey, (seen.get(site.streetKey) ?? 0) + 1);
+    const key = collisionKey(site.banner, site.state, site.streetKey);
+    seen.set(key, (seen.get(key) ?? 0) + 1);
   }
   return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([key]) => key));
+}
+
+/** Collisions only matter among buildings that could compete: same banner and state. */
+function collisionKey(banner: string | null, state: string | null, what: string | number): string {
+  return `${banner ?? "?"}|${state ?? "?"}|${what}`;
 }
 
 /**
@@ -211,10 +222,15 @@ function knownAcmeIds(register: readonly AcmeProject[]): Set<string> {
  * former number is another site's current number. A name carrying such a
  * number needs locality corroboration before it counts as a store match.
  */
-function numbersSharedByBuildings(inputs: NormalizedInputs): Set<number> {
-  const shared = new Set<number>();
+function numbersSharedByBuildings(inputs: NormalizedInputs): Set<string> {
+  const shared = new Set<string>();
   for (const [number, sites] of inputs.sitesByLocation) {
-    if (new Set(sites.map((s) => s.siteId)).size > 1) shared.add(number);
+    const byScope = new Map<string, Set<string>>();
+    for (const site of sites) {
+      const key = collisionKey(site.banner, site.state, number);
+      byScope.set(key, new Set([...(byScope.get(key) ?? []), site.siteId]));
+    }
+    for (const [key, ids] of byScope) if (ids.size > 1) shared.add(key);
   }
   return shared;
 }
@@ -223,7 +239,9 @@ interface Context {
   readonly pool: readonly PulleyRecord[];
   readonly excluded: readonly PulleyRecord[];
   readonly acme: readonly AcmeProject[];
-  readonly sharedNumbers: ReadonlySet<number>;
+  /** `banner|state|number` keys that identify more than one building in that scope. */
+  readonly sharedNumbers: ReadonlySet<string>;
+  /** `banner|state|streetKey` keys shared by more than one site in that scope. */
   readonly sharedStreets: ReadonlySet<string>;
   /** Memo: which Acme id (if exactly one) a store-less Pulley name identifies by sequence and city. */
   readonly sequenceOwner: Map<string, string | null>;
@@ -247,6 +265,19 @@ function memo(
 // ---------- Per-project decision ----------
 
 function decide(acme: AcmeProject, context: Context): MatchDecision {
+  const decision = decideFromEvidence(acme, context);
+  if (acme.identityDisputed === null || decision.status !== OutputStatus.Matched) return decision;
+  // Contradictory source rows must never raise confidence: hold the row.
+  return review(
+    acme,
+    decision.candidates,
+    decision.tier ?? Tier.ExactId,
+    ReasonCode.IdentityDisputed,
+    `${acme.identityDisputed}; would otherwise match ${decision.pulleyId}`,
+  );
+}
+
+function decideFromEvidence(acme: AcmeProject, context: Context): MatchDecision {
   const state = acmeState(acme);
   const scoped = context.pool.filter((p) => isInScope(acme, p));
   const sameYear = (p: PulleyRecord): boolean => temporalVerdict(acme, p) !== Temporal.Conflict;
@@ -325,10 +356,10 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
 function isExactIdCandidate(
   acme: AcmeProject,
   pulley: PulleyRecord,
-  sharedNumbers: ReadonlySet<number>,
+  sharedNumbers: ReadonlySet<string>,
 ): boolean {
   if (!pulley.parsedName.fullIds.includes(acme.id)) return false;
-  if (!sharedNumbers.has(acme.store)) return true;
+  if (!sharedNumbers.has(collisionKey(acme.banner, acmeState(acme), acme.store))) return true;
   return localityAgrees(acme, pulley);
 }
 
@@ -343,12 +374,13 @@ function localityAgrees(acme: AcmeProject, pulley: PulleyRecord): boolean {
 function isStoreCandidate(
   acme: AcmeProject,
   pulley: PulleyRecord,
-  sharedNumbers: ReadonlySet<number>,
+  sharedNumbers: ReadonlySet<string>,
 ): boolean {
   if (!storeMatches(acme, pulley)) return false;
   const mine = acmeStoreNumbers(acme);
+  const scope = (n: number): string => collisionKey(acme.banner, acmeState(acme), n);
   const viaShared = pulley.parsedName.storeNumbers.every(
-    (n) => !mine.includes(n) || sharedNumbers.has(n),
+    (n) => !mine.includes(n) || sharedNumbers.has(scope(n)),
   );
   if (!viaShared) return true;
   return localityAgrees(acme, pulley);
@@ -429,7 +461,8 @@ function isAddressCandidate(
   if (sequenceRelation(acme, pulley) === SequenceRelation.Different) return false;
   if (pulley.streetKey === null || pulley.streetKey !== acme.site?.streetKey) return false;
   // Two sites on the same street key (possible across cities): need the city too.
-  return !sharedStreets.has(pulley.streetKey) || cityMatches(acme, pulley);
+  const key = collisionKey(acme.banner, acmeState(acme), pulley.streetKey);
+  return !sharedStreets.has(key) || cityMatches(acme, pulley);
 }
 
 function isWeakCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
@@ -545,14 +578,17 @@ function strongDecision(
   candidates: readonly Candidate[],
   context: Context,
 ): MatchDecision {
-  const top = candidates[0];
-  if (!top) return noCandidate(acme, context.excluded);
-  const tier = top.tier;
+  const first = candidates[0];
+  if (!first) return noCandidate(acme, context.excluded);
+  const tier = first.tier;
   // Acceptance is separate from ranking: candidates that differ only in
   // soft corroboration (jurisdiction city, street name) are a tie, because
   // the brief says those names legitimately differ. Only hard evidence
-  // (id, store, type, dates, sequence, exact street, status) separates them.
-  const tied = candidates.filter((c) => decisiveScore(c) === decisiveScore(top));
+  // (id, store, type, dates, sequence, exact street, status) separates them,
+  // so acceptance starts from the best *decisive* score, not the display order.
+  const best = Math.max(...candidates.map(decisiveScore));
+  const tied = candidates.filter((c) => decisiveScore(c) === best);
+  const top = tied[0] as Candidate;
   const live = tied.filter((c) => !isPulleyCanceled(c.pulleyStatus));
   const winner = tied.length === 1 ? top : live.length === 1 ? live[0] : undefined;
 

@@ -28,9 +28,11 @@ may be before it must not be relied on.
 
 ## Freshness and alerts
 
-`pnpm cli status --max-age-hours 24` prints the last published run, its age,
-and its counts, and exits with code 9 when the result is older than the
-limit or nothing has been published. The scheduled workflow runs it after
+`pnpm cli status --max-age-hours 24 --max-source-age-hours 24` prints the
+last published run, when it was published, when its *source data* was
+fetched (a replay republishes old data), and its counts. It exits with code
+9 when either age exceeds its limit or nothing has been published. It needs
+no credentials, so a scheduler can run it in a clean environment. The scheduled workflow runs it after
 every sync. GitHub notifies the repository's watchers when a workflow run
 fails, so a missed or failed publication reaches whoever watches the repo;
 set that to the operator and backup, or add a notification step to the
@@ -43,7 +45,12 @@ that nobody has refreshed, which only `status` reveals.
 ## Recovery
 
 - **Last good output.** `data/out/latest.json` names it. A failed run never
-  changes it. Every run directory is immutable once published.
+  changes it. Every run directory is immutable once published, and retention
+  never removes the archive a retained output was computed from.
+- **Concurrency.** The lock is created atomically; a dead owner's lock is
+  removed only under a second exclusive file, the reclaim mutex, after
+  re-checking liveness while holding it, so recovery can never displace a
+  live owner.
 - **Reproduce a past decision.** `pnpm sync --replay <runId> --quiet` reruns
   today's rules on that run's archived bytes; the archive verifies every
   file against its recorded hash. To see what the rules were at the time,
@@ -80,6 +87,7 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `TYPE_MISMATCH` | The only project at the store is a different kind of work |
 | `STATUS_CONFLICT` | Canceled or closed on one side only |
 | `STATUS_UNKNOWN` | A status value the tool has never seen; it will not guess what it means |
+| `IDENTITY_DISPUTED` | Acme's own source rows for this project or its site contradict each other; it would have matched, but contradictory evidence never raises confidence |
 | `WEAK_EVIDENCE` | Same street name or same city only |
 | `UNRELATED_ONLY` | Projects at the store exist but are another line or another year |
 | `EXCLUDED_ONLY` | Only a pathfinder or signage project references it |
@@ -150,7 +158,8 @@ still points at the last good run. Fix the cause and run again.
 | Warnings about unknown status or type values | A new vocabulary value appeared; matching still ran, treating it conservatively |
 | Exit 6 | A sync is already running, or a crashed one left `data/.lock`; the tool reclaims locks whose owner is gone |
 | Exit 8, "Publication refused" | An export came back empty or far smaller than last time; inspect the archived inputs, then rerun with `--accept-input-change` only if the change is real |
-| Exit 9 from `status` | Nothing published, or the last result is older than the limit |
+| Exit 9 from `status` | Nothing published, or the last result or its source data is older than the limit |
+| Exit 10, "invariant violation" | The combined result broke a hard rule; a defect in the tool. Nothing was published; contact engineering with `run.json` from the previous run and the archived inputs |
 
 ## Demo on an updated dataset
 

@@ -18,6 +18,7 @@ export const ExitCode = {
   Io: 7,
   Quality: 8,
   Stale: 9,
+  Invariant: 10,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];

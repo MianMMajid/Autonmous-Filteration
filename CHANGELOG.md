@@ -6,6 +6,15 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Round-two audit response: anchors must agree (`YEAR_CONFLICT` otherwise),
+  reclaim-mutex lock recovery, credential-free `status` with source-data age
+  (`--max-source-age-hours`), disputed identity held for review
+  (`IDENTITY_DISPUTED`), override temporal and assignment checks, final
+  publication invariants (exit 10), order-independent register duplicates,
+  acceptance from the best decisive score, known-scope requirement,
+  retention protecting referenced archives, collision indexes scoped by
+  banner and state. Regression tests in tests/audit-round-2.test.ts.
+
 - Readiness pass: acceptance separated from ranking (soft-corroboration ties
   go to review), order-invariant assignment resolution, one scope rule shared
   by forward, reverse, and override checks, conflicting-duplicate quarantine,

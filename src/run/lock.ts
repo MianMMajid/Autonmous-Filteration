@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { IoError, LockedError } from "../errors.ts";
 
@@ -7,23 +7,33 @@ import { IoError, LockedError } from "../errors.ts";
  * Single-run lock. Two concurrent syncs would race on `latest` and the
  * archive, so the second one exits with a clear message instead.
  *
- * Protocol (no window in which two owners can both hold the lock):
+ * Protocol:
  * - Acquire: write the owner record to a private temp file, then `link` it
  *   to the lock path. `link` is atomic and fails with EEXIST if the lock
  *   exists, and the lock file is never observed empty or half-written.
- * - Stale recovery: a lock whose owner pid is no longer alive is *claimed*
- *   by renaming it to a private name. `rename` succeeds for exactly one
- *   contender; everyone else sees ENOENT and simply retries the acquire. A
- *   contender can therefore never delete a replacement owner's live lock.
+ * - Stale recovery: removing a dead owner's lock is itself serialized by a
+ *   second exclusive file, the reclaim mutex. Only its holder may remove a
+ *   lock, and it re-reads and re-checks liveness *while holding the mutex*,
+ *   so a live owner that acquired after a contender's first read is seen
+ *   and never displaced. The mutex is held for microseconds; a mutex left by
+ *   a reclaimer that died is itself reclaimed after a generous age.
  * - Release: remove the lock only if it still records our pid.
+ *
+ * Any removal of the lock path outside the owner's own release happens only
+ * under the reclaim mutex, which is what makes the dead-owner check and the
+ * removal a single step.
  */
 
 export const LOCK_FILENAME = ".lock";
-const MAX_ATTEMPTS = 6;
+const RECLAIM_FILENAME = ".lock.reclaim";
+const MAX_ATTEMPTS = 8;
+/** A reclaim mutex older than this belongs to a reclaimer that died mid-step. */
+const RECLAIM_MUTEX_STALE_MS = 60_000;
 
 interface LockContent {
   readonly pid: number;
   readonly startedAt: string;
+  readonly token: string;
 }
 
 export interface RunLock {
@@ -31,39 +41,87 @@ export interface RunLock {
   release(): Promise<void>;
 }
 
-export async function acquireLock(
-  dataDir: string,
-  options: { readonly pid?: number; readonly isAlive?: (pid: number) => boolean } = {},
-): Promise<RunLock> {
+export interface LockOptions {
+  readonly pid?: number;
+  readonly isAlive?: (pid: number) => boolean;
+  readonly sleep?: (ms: number) => Promise<void>;
+  /** Test hook: runs after a stale owner was observed and before reclaim begins. */
+  readonly beforeReclaim?: () => Promise<void>;
+}
+
+export async function acquireLock(dataDir: string, options: LockOptions = {}): Promise<RunLock> {
   const pid = options.pid ?? process.pid;
   const isAlive = options.isAlive ?? processIsAlive;
+  const sleep = options.sleep ?? defaultSleep;
   const path = join(dataDir, LOCK_FILENAME);
   await mkdir(dataDir, { recursive: true }).catch((error: unknown) => {
     throw new IoError(`Could not create ${dataDir}`, { cause: error });
   });
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (await tryCreate(path, { pid, startedAt: new Date().toISOString() })) {
+    const content: LockContent = { pid, startedAt: new Date().toISOString(), token: newToken() };
+    if (await createExclusive(path, content)) {
       return { path, release: () => releaseLock(path, pid) };
     }
-    const existing = await readLock(path);
-    if (existing === "missing") continue; // released between our attempts; retry
-    if (existing !== "corrupt" && isAlive(existing.pid)) {
-      throw new LockedError(
-        `Another sync (pid ${existing.pid}, started ${existing.startedAt}) is running. Wait for it or remove ${path} if it is stale.`,
-        { details: { path, pid: existing.pid, startedAt: existing.startedAt } },
-      );
-    }
-    await claimStale(path); // whoever wins the rename removes it; everyone retries
+    const existing = await readRecord(path);
+    if (existing === "missing") continue; // released between our steps; retry
+    if (existing !== "corrupt" && isAlive(existing.pid)) throw locked(path, existing);
+    if (options.beforeReclaim) await options.beforeReclaim();
+    await reclaimDeadOwner(path, join(dataDir, RECLAIM_FILENAME), isAlive, sleep);
   }
   throw new LockedError(`Could not acquire lock ${path} after ${MAX_ATTEMPTS} attempts`, {
     details: { path },
   });
 }
 
-/** Atomically create the lock with its content in place. False if it already exists. */
-async function tryCreate(path: string, content: LockContent): Promise<boolean> {
-  const temp = `${path}.${content.pid}.${randomBytes(4).toString("hex")}.tmp`;
+/**
+ * Remove the lock only if, while holding the reclaim mutex, its owner is
+ * still dead. A live owner found here (someone acquired after our first
+ * read) is left alone and reported as holding the lock.
+ */
+async function reclaimDeadOwner(
+  path: string,
+  mutexPath: string,
+  isAlive: (pid: number) => boolean,
+  sleep: (ms: number) => Promise<void>,
+): Promise<void> {
+  const mutex = await acquireReclaimMutex(mutexPath, sleep);
+  try {
+    const current = await readRecord(path);
+    if (current === "missing") return;
+    if (current !== "corrupt" && isAlive(current.pid)) throw locked(path, current);
+    await rm(path, { force: true });
+  } finally {
+    await rm(mutex, { force: true }).catch(() => undefined);
+  }
+}
+
+async function acquireReclaimMutex(
+  mutexPath: string,
+  sleep: (ms: number) => Promise<void>,
+): Promise<string> {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const content: LockContent = {
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+      token: newToken(),
+    };
+    if (await createExclusive(mutexPath, content)) return mutexPath;
+    // Someone else is reclaiming. Wait briefly; if their mutex is ancient, they died holding it.
+    try {
+      const age = Date.now() - (await stat(mutexPath)).mtimeMs;
+      if (age > RECLAIM_MUTEX_STALE_MS) await rm(mutexPath, { force: true });
+    } catch {
+      // vanished; loop
+    }
+    await sleep(5 + Math.floor(Math.random() * 10));
+  }
+  throw new IoError(`Could not reclaim the lock: ${mutexPath} stays busy`);
+}
+
+/** Atomically create `path` with its content in place. False if it already exists. */
+async function createExclusive(path: string, content: LockContent): Promise<boolean> {
+  const temp = `${path}.${content.pid}.${content.token}.tmp`;
   const payload = JSON.stringify(content);
   try {
     await writeFile(temp, payload, { flag: "wx" });
@@ -73,16 +131,15 @@ async function tryCreate(path: string, content: LockContent): Promise<boolean> {
     } catch (error) {
       if (isErrno(error, "EEXIST")) return false;
       if (isErrno(error, "EPERM") || isErrno(error, "ENOSYS") || isErrno(error, "EXDEV")) {
-        // Filesystems without hard links: fall back to exclusive create.
-        return exclusiveWrite(path, payload);
+        return exclusiveWrite(path, payload); // filesystems without hard links
       }
-      throw new IoError(`Could not create lock ${path}`, { cause: error });
+      throw new IoError(`Could not create ${path}`, { cause: error });
     } finally {
       await rm(temp, { force: true }).catch(() => undefined);
     }
   } catch (error) {
     if (error instanceof IoError) throw error;
-    throw new IoError(`Could not create lock ${path}`, { cause: error });
+    throw new IoError(`Could not create ${path}`, { cause: error });
   }
 }
 
@@ -92,30 +149,18 @@ async function exclusiveWrite(path: string, payload: string): Promise<boolean> {
     return true;
   } catch (error) {
     if (isErrno(error, "EEXIST")) return false;
-    throw new IoError(`Could not create lock ${path}`, { cause: error });
+    throw new IoError(`Could not create ${path}`, { cause: error });
   }
-}
-
-/** Rename the stale lock to a private name; only one contender can succeed. */
-async function claimStale(path: string): Promise<void> {
-  const claimed = `${path}.stale.${randomBytes(4).toString("hex")}`;
-  try {
-    await rename(path, claimed);
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return; // someone else claimed or released it
-    throw new IoError(`Could not reclaim stale lock ${path}`, { cause: error });
-  }
-  await rm(claimed, { force: true }).catch(() => undefined);
 }
 
 async function releaseLock(path: string, pid: number): Promise<void> {
-  const existing = await readLock(path);
+  const existing = await readRecord(path);
   if (existing === "missing") return;
   if (existing !== "corrupt" && existing.pid !== pid) return; // not ours any more
   await rm(path, { force: true });
 }
 
-async function readLock(path: string): Promise<LockContent | "missing" | "corrupt"> {
+async function readRecord(path: string): Promise<LockContent | "missing" | "corrupt"> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
@@ -129,12 +174,28 @@ async function readLock(path: string): Promise<LockContent | "missing" | "corrup
         "startedAt" in parsed && typeof parsed.startedAt === "string"
           ? parsed.startedAt
           : "unknown";
-      return { pid: parsed.pid, startedAt };
+      const token = "token" in parsed && typeof parsed.token === "string" ? parsed.token : "";
+      return { pid: parsed.pid, startedAt, token };
     }
   } catch {
     // fall through
   }
   return "corrupt";
+}
+
+function locked(path: string, owner: LockContent): LockedError {
+  return new LockedError(
+    `Another sync (pid ${owner.pid}, started ${owner.startedAt}) is running. Wait for it or remove ${path} if it is stale.`,
+    { details: { path, pid: owner.pid, startedAt: owner.startedAt } },
+  );
+}
+
+function newToken(): string {
+  return randomBytes(4).toString("hex");
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function processIsAlive(pid: number): boolean {

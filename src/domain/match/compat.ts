@@ -112,9 +112,11 @@ export function acmeState(acme: AcmeProject): string | null {
  */
 export function isInScope(acme: AcmeProject, pulley: PulleyRecord): boolean {
   if (pulley.isPathfinder || pulley.isSignage) return false;
+  // Two unknown banners are not evidence that the organizations agree.
+  if (acme.banner === null || pulley.banner === null) return false;
   if (pulley.banner !== acme.banner) return false;
   const state = acmeState(acme);
-  return state === null || pulley.state === state;
+  return state !== null && pulley.state === state;
 }
 
 // ---------- Dates ----------

@@ -24,6 +24,7 @@ interface AcmeOverrides {
   name?: string;
   site?: null;
   dates?: Partial<NonNullable<AcmeProject["dates"]>>;
+  identityDisputed?: string | null;
 }
 
 export function acme(overrides: AcmeOverrides = {}): AcmeProject {
@@ -61,6 +62,7 @@ export function acme(overrides: AcmeOverrides = {}): AcmeProject {
     status: overrides.status ?? "Active",
     banner: overrides.banner ?? Banner.Market,
     site: overrides.site === null ? null : site,
+    identityDisputed: overrides.identityDisputed ?? null,
     dates: overrides.dates
       ? {
           designStart: null,

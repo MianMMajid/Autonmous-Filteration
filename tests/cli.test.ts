@@ -56,6 +56,12 @@ describe("cli", () => {
     expect(result.stdout).toMatch(/No published result yet/);
   });
 
+  it("status never asks for credentials (a clean scheduler environment)", async () => {
+    const result = await invoke(["status"], { DATA_DIR: dataDir });
+    expect(result.code).toBe(ExitCode.Stale);
+    expect(result.stderr).not.toMatch(/is required/);
+  });
+
   it("rejects a non-numeric --max-age-hours", async () => {
     const result = await invoke(["status", "--max-age-hours", "soon"], {
       SITELEDGER_USERNAME: "u",

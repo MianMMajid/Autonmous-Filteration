@@ -15,7 +15,7 @@
  */
 
 import { Command, InvalidArgumentError } from "commander";
-import { loadConfig } from "./config.ts";
+import { loadConfig, loadLocalConfig } from "./config.ts";
 import { ExitCode, StaleError, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
 import { readPublishedStatus, renderStatus } from "./run/status.ts";
@@ -73,22 +73,40 @@ program
 
 program
   .command("status")
-  .description("Show the last published result and how old it is.")
+  .description("Show the last published result and how old it and its source data are.")
   .option(
     "--max-age-hours <hours>",
-    "exit with code 9 if the last result is older than this",
+    "exit with code 9 if the last result was published longer ago than this",
     parseHours,
   )
-  .action(async (options: { maxAgeHours?: number }) => {
-    const config = loadConfig();
+  .option(
+    "--max-source-age-hours <hours>",
+    "exit with code 9 if the source data behind it was fetched longer ago than this",
+    parseHours,
+  )
+  .action(async (options: { maxAgeHours?: number; maxSourceAgeHours?: number }) => {
+    // Local only: reads data/, never needs credentials.
+    const config = loadLocalConfig();
     const maxAge = options.maxAgeHours ?? null;
+    const maxSourceAge = options.maxSourceAgeHours ?? null;
     const status = await readPublishedStatus(config.dataDir);
-    console.log(renderStatus(status, maxAge));
+    console.log(renderStatus(status, maxAge, maxSourceAge));
     if (!status) throw new StaleError("No published result yet");
     if (maxAge !== null && status.ageHours > maxAge) {
       throw new StaleError(
-        `Last published result ${status.runId} is ${status.ageHours.toFixed(1)} h old, older than ${maxAge} h`,
+        `Last published result ${status.runId} was published ${status.ageHours.toFixed(1)} h ago, more than ${maxAge} h`,
         { details: { runId: status.runId, publishedAt: status.publishedAt } },
+      );
+    }
+    if (
+      maxSourceAge !== null &&
+      (status.sourceAgeHours === null || status.sourceAgeHours > maxSourceAge)
+    ) {
+      throw new StaleError(
+        status.sourceAgeHours === null
+          ? `Run ${status.runId} does not record when its source data was fetched`
+          : `Source data behind ${status.runId} was fetched ${status.sourceAgeHours.toFixed(1)} h ago, more than ${maxSourceAge} h`,
+        { details: { runId: status.runId, sourceAcquiredAt: status.sourceAcquiredAt } },
       );
     }
   });
