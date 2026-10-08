@@ -38,7 +38,7 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/sources/vocab.ts` | unknown-value detection for categorical fields | done |
 | `src/domain/model.ts` | canonical records, banner and type code tables | done |
 | `src/domain/normalize/` | name parser, address normalizer, join into canonical records | done |
-| `src/domain/match/` | candidate pool, tiers, reason codes | phase 3 |
+| `src/domain/match/` | compatibility rules, tiered matcher, reason codes | done |
 | `src/output/` | CSV writers, summary, run diff | phase 4 |
 | `src/run/archive.ts` | raw-input archive and replay | done |
 | `src/run/acquire.ts` | live fetch or archive replay, parse, drift report | done |

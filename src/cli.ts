@@ -10,6 +10,7 @@
 
 import { Command } from "commander";
 import { loadConfig } from "./config.ts";
+import { matchProjects } from "./domain/match/matcher.ts";
 import { normalizeInputs } from "./domain/normalize/build.ts";
 import { ExitCode, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
@@ -69,8 +70,19 @@ program
       "inputs normalized",
     );
 
-    // Phases 3-4 land here: matching -> output.
-    log.warn("matching is not implemented yet (Phase 2: normalization only)");
+    const report = matchProjects(normalized);
+    log.info(
+      {
+        ...report.counts,
+        reasons: report.reasons,
+        unmatchedPulley: report.unmatchedPulley.length,
+        pulleyIdsNotInRegister: report.pulleyIdsNotInRegister.length,
+      },
+      "matching complete",
+    );
+
+    // Phase 4 lands here: output files.
+    log.warn("output files are not written yet (Phase 3: matching only)");
   });
 
 async function main(): Promise<void> {
