@@ -75,7 +75,7 @@ Versions 1 and 2 remain readable for migration. Version 2 must contain its quali
 comparison fields; version 1 can derive its matched count from decisions. Legacy
 outputs lack the new artifact-integrity guarantee and cannot be exported by
 `published-path` or backed up until a supervised successful sync produces version 3.
-Matching rules are versioned separately; current rules 2026-10-08.9 add
+Matching rules are versioned separately; current rules 2026-10-08.10 add
 EV umbrella support and source-contradiction safeguards described in MATCHING.md. New review fingerprints are
 optional on historical records; their absence resurfaces pending cases once.
 
@@ -234,3 +234,29 @@ New raw archives and state directories are created with owner-only access (0700)
 raw reports and manifests use 0600 and flushed writes. Existing directory modes
 are not changed automatically: verify permissions on the deployed volume. An
 existing partial output directory is preserved, never deleted and reused.
+
+
+## Storage lifecycle: partial runs and backups
+
+`RETAIN_RUNS` limits normal raw/output history, preserving archives referenced
+by retained outputs. It does **not** bound either of these categories:
+
+- `out/<run-id>.partial`: evidence left by a killed process. Ordinary write errors
+  clean up only the staging directory owned by that attempt; collisions never
+  remove an earlier attempt's files. Stop all sync processes and ensure none can
+  resume before maintenance. Record each abandoned ID and archive any evidence
+  needed for incident analysis. Remove it only under the operator's approved
+  incident-retention policy, never as part of retrying the same run ID. Start the
+  next sync with a new run ID. Age alone does not establish abandonment.
+- Backup snapshots: each successful scheduled run makes a complete snapshot.
+  Configure expiration on the backup service/volume before enabling schedules,
+  and protect the latest verified recoverable snapshot from expiration. Choose
+  the retention window with the data owner; the CLI deliberately has no implicit
+  deletion policy. Verify a restore after applying or changing retention.
+
+Provision capacity for retained snapshots, one additional full snapshot during
+staging, normal history and incident evidence. Monitor free space and snapshot
+age independently of sync, with a named operator responsible for failures.
+The host's retention and capacity alerts need a real deployment drill; a written
+policy alone does not bound storage. The repository cannot claim bounded backup
+or crash-evidence storage without that external policy being active.

@@ -8,6 +8,9 @@ import {
   isInScope,
   isPulleyCanceled,
   milestoneGaps,
+  namesProject,
+  StatusVerdict,
+  statusVerdict,
   storeContradicts,
   storeMatches,
   Temporal,
@@ -31,9 +34,10 @@ export function acmeNameIssue(acme: AcmeProject): string | null {
   if (acme.parsedName.signageHint && !typesEqual(acme.projectType, "Signage"))
     return "Acme name says signage but its structured project type disagrees";
   const canonical = acme.parsedName.canonical;
+  const namedBanner = canonical ? bannerFromCode(canonical.bannerCode) : null;
   if (
     canonical &&
-    (canonical.state !== acmeState(acme) || bannerFromCode(canonical.bannerCode) !== acme.banner)
+    (canonical.state !== acmeState(acme) || (namedBanner !== null && namedBanner !== acme.banner))
   )
     return "Acme canonical name contradicts its site organization or state";
   if (acme.parsedName.storeNumbers.some((store) => !acmeStoreNumbers(acme).includes(store)))
@@ -104,7 +108,15 @@ export function matchSafetyIssue(
     !identifiedYear &&
     temporalVerdict(acme, pulley) === Temporal.Unknown &&
     storeMatches(acme, pulley) &&
-    index.siteProjects(acme).length === 1 &&
+    index
+      .siteProjects(acme)
+      .filter(
+        (other) =>
+          isInScope(other, pulley) &&
+          typesCompatible(other.projectType, pulley.projectType) &&
+          statusVerdict(other.status, pulley.status) !== StatusVerdict.Conflict &&
+          temporalVerdict(other, pulley) !== Temporal.Conflict,
+      ).length === 1 &&
     index.compatibleCandidates(acme).length === 1;
   if (
     automatic &&
@@ -115,7 +127,7 @@ export function matchSafetyIssue(
     return {
       reason: ReasonCode.InsufficientEvidence,
       resolution: "human_confirmation",
-      note: "No exact full id or temporal evidence resolves ownership; the single-project, unique-store-candidate exception does not apply",
+      note: "No exact full id or temporal evidence resolves ownership; the single-compatible-project, unique-store-candidate exception does not apply",
     };
   }
   if (
@@ -152,9 +164,10 @@ function pairConflict(acme: AcmeProject, pulley: PulleyRecord, automatic: boolea
   if (pulley.parsedName.signageHint && !pulley.isSignage)
     return "Pulley name says signage but its structured project type disagrees";
   const canonical = pulley.parsedName.canonical;
+  const namedBanner = canonical ? bannerFromCode(canonical.bannerCode) : null;
   if (
     canonical &&
-    (canonical.state !== pulley.state || bannerFromCode(canonical.bannerCode) !== pulley.banner)
+    (canonical.state !== pulley.state || (namedBanner !== null && namedBanner !== pulley.banner))
   )
     return "Pulley canonical name contradicts its organization or state";
   if (storeContradicts(acme, pulley)) return "Pulley name identifies another building";
@@ -178,12 +191,6 @@ function pairConflict(acme: AcmeProject, pulley: PulleyRecord, automatic: boolea
     return "Pulley street names a different street from the Acme building";
 
   return null;
-}
-
-function namesProject(acme: AcmeProject, pulley: PulleyRecord): boolean {
-  return acmeStoreNumbers(acme).some((store) =>
-    pulley.parsedName.fullIds.includes(`${store}.${acme.sequence}`),
-  );
 }
 
 function ownershipConflict(

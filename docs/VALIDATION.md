@@ -1,6 +1,7 @@
 # Validation
 
-Current rules are **2026-10-08.9**. See [the current readiness evidence](READINESS_COMPLETION.md)
+Current rules are **2026-10-08.10**. See [the latest review fixes](REVIEW_ROUND_6.md)
+and [the prior readiness evidence](READINESS_COMPLETION.md)
 and [the 50-case source-record review](validation/2026-10-08-record-review.md).
 Sections below retain historical tuning observations; they are not independent
 accuracy measurements for the current implementation.

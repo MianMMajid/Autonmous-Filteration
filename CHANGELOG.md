@@ -1,5 +1,17 @@
 # Changelog
 
+## Review round 6 — 2026-10-08 (rules 2026-10-08.10)
+
+- Restore bounded common address aliases and discard venue-only building text
+  while preserving street proper names and explicit building identity.
+- Count compatible sibling owners for singleton matching; retain genuine ambiguity.
+- Promote verified former-store full IDs to exact evidence with collision guards;
+  ignore unknown canonical banner codes without waiving known contradictions.
+- Print the configured override path and complete output inventory in summaries.
+- Clarify explicit operator retention for crash evidence and backup snapshots.
+- Offline replay: 324 matched, 26 review, 50 no-match; one restored match and no
+  rematched targets. Prior publication and its evidence remain unchanged.
+
 ## Readiness completion — 2026-10-08 (rules 2026-10-08.9)
 
 - Support evidenced EV umbrella permits and explained review decisions; hold a

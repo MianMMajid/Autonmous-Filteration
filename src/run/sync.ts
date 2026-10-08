@@ -158,7 +158,11 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
       normalized,
       report,
       diff,
-      overrides: { applied: overrides.applied, problems: overrides.problems },
+      overrides: {
+        applied: overrides.applied,
+        problems: overrides.problems,
+        path: config.overridesFile,
+      },
       quality: { ...quality, accepted },
       previousDecisions: previous?.decisions ?? null,
       rulesVersion: RULES_VERSION,

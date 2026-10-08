@@ -1,4 +1,10 @@
-# Submission notes — rules 2026-10-08.9
+# Submission notes — published rules 2026-10-08.9
+
+These notes accompany the exact published snapshot below. The subsequent .10
+fixes have an offline result of 324/26/50 ([review](REVIEW_ROUND_6.md)); they have
+not replaced this publication. For a .10 submission, run the updated CLI and
+use its generated `handoff.md` and mapping together. Do not reuse the .9 sample
+estimate as if independently validated on the changed decisions.
 
 ## Mapping and reproducible handoff
 

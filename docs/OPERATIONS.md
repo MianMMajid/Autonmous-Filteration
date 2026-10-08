@@ -149,8 +149,8 @@ not change that fingerprint. The first run after upgrading old output records
 resurfaces their pending cases once because no comparison fingerprint exists.
 Removed projects are reported separately from resolved reviews.
 
-The initial 27-row backlog under rules 2026-10-08.9 on the October 8 archive needs an onboarding review;
-it is not a claim that the team will have 27 new cases every week. Actual weekly
+The initial 26-row backlog in the rules 2026-10-08.10 offline replay on the October 8 archive needs an onboarding review;
+it is not a claim that the team will have 26 new cases every week. Actual weekly
 workload must be measured over fresh snapshots. Verified overrides retain prior
 decisions when evidence is still valid. Hard source contradictions require source
 correction; explained human decisions can resolve soft street/date discrepancies.
@@ -236,3 +236,11 @@ evidence checked. Record author and decision date too. Automatic matching still
 withholds these pairs. Explicit identity/year conflicts, another registered
 owner, scope/exclusions, status and assignment constraints remain enforced.
 See `DEPLOYMENT.md` for first-run crash recovery when no backup exists yet.
+
+The summary prints the configured overrides path, including a custom
+`OVERRIDES_FILE`, and lists all published files. `overrides.snapshot.csv` is a
+historical copy, not the file to edit for the next live run.
+
+Run retention does not delete `.partial` crash evidence or backup snapshots.
+See the storage lifecycle procedure in `DEPLOYMENT.md`; these need an operator
+policy and capacity monitoring on the deployment volume.
