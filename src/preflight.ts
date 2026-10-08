@@ -9,6 +9,7 @@
  *   pnpm preflight --skip-env   skip credential checks (used in CI)
  */
 
+import { createHash } from "node:crypto";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,11 +59,21 @@ checks.push({
   blocking: true,
 });
 
-// Vendored SheetJS tarball present (not on npm; see docs/adr/0003).
+// Vendored SheetJS tarball present and unchanged (not on npm; see docs/adr/0003).
+const TARBALL = resolve(repoRoot, "vendor", "xlsx-0.20.3.tgz");
+const TARBALL_SHA256 = "8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8";
+const tarballHash = existsSync(TARBALL)
+  ? createHash("sha256").update(readFileSync(TARBALL)).digest("hex")
+  : null;
 checks.push({
   name: "vendor/xlsx",
-  ok: existsSync(resolve(repoRoot, "vendor", "xlsx-0.20.3.tgz")),
-  detail: "vendor/xlsx-0.20.3.tgz must exist; see docs/adr/0003-vendored-sheetjs.md",
+  ok: tarballHash === TARBALL_SHA256,
+  detail:
+    tarballHash === null
+      ? "vendor/xlsx-0.20.3.tgz is missing; see docs/adr/0003-vendored-sheetjs.md"
+      : tarballHash === TARBALL_SHA256
+        ? "sha256 verified against docs/adr/0003"
+        : `sha256 ${tarballHash.slice(0, 12)}… does not match docs/adr/0003; do not use this tarball`,
   blocking: true,
 });
 

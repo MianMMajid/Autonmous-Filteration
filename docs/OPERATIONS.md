@@ -14,6 +14,46 @@ decisions so they stick.
 The run takes a few seconds. Two runs cannot overlap: the second exits with
 code 6 and a message naming the first.
 
+## Who owns it
+
+| Role | Name | Responsibility |
+|---|---|---|
+| Operator | _fill in_ | Runs or watches the scheduled sync, works the review list, records decisions in `overrides.csv` |
+| Backup | _fill in_ | Covers the operator; knows where the credentials live |
+| Engineering contact | _fill in_ | Exit code 5 (data shape changed), exit code 8 (inputs collapsed), new status vocabulary |
+
+Agree with the Account Lead on two numbers and write them here: the latest
+acceptable publication time before each review window, and how old a result
+may be before it must not be relied on.
+
+## Freshness and alerts
+
+`pnpm cli status --max-age-hours 24` prints the last published run, its age,
+and its counts, and exits with code 9 when the result is older than the
+limit or nothing has been published. The scheduled workflow runs it after
+every sync. GitHub notifies the repository's watchers when a workflow run
+fails, so a missed or failed publication reaches whoever watches the repo;
+set that to the operator and backup, or add a notification step to the
+workflow for the team's channel.
+
+A failed run and an old result are different things: a failed run exits
+non-zero and `latest.json` does not move; an old result is a successful run
+that nobody has refreshed, which only `status` reveals.
+
+## Recovery
+
+- **Last good output.** `data/out/latest.json` names it. A failed run never
+  changes it. Every run directory is immutable once published.
+- **Reproduce a past decision.** `pnpm sync --replay <runId> --quiet` reruns
+  today's rules on that run's archived bytes; the archive verifies every
+  file against its recorded hash. To see what the rules were at the time,
+  read `run.json`: it records the rules version, tool version, input hashes,
+  configuration, the overrides file hash, and the matcher's decision for
+  every row a human decision replaced.
+- **Drill.** Once, before relying on the tool: delete `data/out/latest.json`
+  on a copy, run `pnpm sync --replay <runId>`, and confirm the reproduced
+  `mapping.csv` is byte-identical to the archived one.
+
 ## Reading the result
 
 Start with `summary.txt` (also printed to the terminal). It leads with the
@@ -46,6 +86,11 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `NO_CANDIDATE` | Nothing relates |
 | `OVERRIDE` | A human decision from `overrides.csv` |
 
+`review.csv` and `decisions.csv` show, per row, the Acme side (city, street,
+milestone dates) and for each candidate its city, street, dates, a plain
+reading of the evidence, and the score. Review rows also carry a
+`recommended_action` that says what to do.
+
 ## Status differences
 
 A separate section of the summary lists matched rows where the two systems
@@ -64,14 +109,19 @@ Logs are quiet by default; set `LOG_LEVEL=info` in `.env` to see each step.
 
 ## Recording decisions
 
-Once a review row is settled, add it to `data/overrides.csv` so it does not
-come back next run:
+Once a review row is settled, add it to `overrides.csv` at the repository
+root (tracked in version control, so every decision has an author, a date,
+and a history) so it does not come back next run:
 
 ```
-acme_project_id,pulley_project_id,status,note
-3716.1005,prj_ae5zai,matched,confirmed with the lead 2026-10-09
-2523.1001,,no_match,Pulley never opened this one
+acme_project_id,pulley_project_id,status,note,author,decided_at
+3716.1005,prj_ae5zai,matched,confirmed with the lead,J. Lee,2026-10-09
+2523.1001,,no_match,Pulley never opened this one,J. Lee,2026-10-09
 ```
+
+`author` and `decided_at` are optional but recorded in `run.json` when
+present. `OVERRIDES_FILE` in `.env` points elsewhere if the team keeps the
+file on a shared drive instead.
 
 `status` is `matched` (with a Pulley id) or `no_match` (without one). The
 tool validates every line and lists any it cannot apply in the summary, for
@@ -99,6 +149,8 @@ still points at the last good run. Fix the cause and run again.
 | Exit 5, "did not match the expected shape" | Pulley API changed a field; same |
 | Warnings about unknown status or type values | A new vocabulary value appeared; matching still ran, treating it conservatively |
 | Exit 6 | A sync is already running, or a crashed one left `data/.lock`; the tool reclaims locks whose owner is gone |
+| Exit 8, "Publication refused" | An export came back empty or far smaller than last time; inspect the archived inputs, then rerun with `--accept-input-change` only if the change is real |
+| Exit 9 from `status` | Nothing published, or the last result is older than the limit |
 
 ## Demo on an updated dataset
 

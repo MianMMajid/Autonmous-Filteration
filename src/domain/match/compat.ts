@@ -105,6 +105,18 @@ export function acmeState(acme: AcmeProject): string | null {
   return acme.site?.state ?? acme.parsedName.canonical?.state ?? null;
 }
 
+/**
+ * The one eligibility rule every path shares: forward candidate pools,
+ * reverse uniqueness checks, and override validation. Pathfinder and
+ * signage are excluded by the brief; banner and state must agree.
+ */
+export function isInScope(acme: AcmeProject, pulley: PulleyRecord): boolean {
+  if (pulley.isPathfinder || pulley.isSignage) return false;
+  if (pulley.banner !== acme.banner) return false;
+  const state = acmeState(acme);
+  return state === null || pulley.state === state;
+}
+
 // ---------- Dates ----------
 
 const DAY_MS = 86_400_000;

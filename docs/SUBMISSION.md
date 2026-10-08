@@ -11,14 +11,14 @@ Acme project, 400 rows on the 2026-10-08 dataset).
 **About 81% of Acme projects are correctly matched** to a Pulley project,
 and about 94% of all rows carry the right outcome.
 
-Basis, from `docs/VALIDATION.md`: the tool reports 333 of 400 rows as
-`matched` (83%). A hand-checked stratified sample across every matching tier
+Basis, from `docs/VALIDATION.md`: the tool reports 332 of 400 rows as
+`matched` (83%); that is coverage, not correctness. A hand-checked stratified sample across every matching tier
 plus a sweep of every matched row with two or more soft concerns puts the
 precision of those rows at roughly 96%, so about 320 are right. The 50
 `no_match` rows are mostly correct outcomes: 21 have nothing in Pulley that
 relates, 24 only relate to another year's permit or another line at the same
 store, and 5 are referenced only by pathfinder projects, which the brief
-excludes. The 17 `needs_review` rows are real questions (duplicate Pulley
+excludes. The 18 `needs_review` rows are real questions (duplicate Pulley
 projects with no dates, canceled on one side only, two ids filed under the
 wrong banner, three lines competing for one permit across years), not
 matcher weakness.
@@ -34,11 +34,11 @@ matcher weakness.
 > it can run as often as the data changes; I've included a schedule that runs
 > it three times a day on weekdays, and it can also be run by hand.
 >
-> Where things stand on today's data: of Acme's 400 projects, 333 are
+> Where things stand on today's data: of Acme's 400 projects, 332 are
 > matched to a Pulley project, 50 have no match (mostly projects Pulley hasn't
-> opened, or lines that fold into a different year's permit), and 17 need a
+> opened, or lines that fold into a different year's permit), and 18 need a
 > human look. Every row carries a reason, so the review file tells you *why*
-> it's asking: the 17 today are things like two Pulley projects for the same
+> it's asking: the 18 today are things like two Pulley projects for the same
 > store and type with no dates, a project that's canceled on our side but
 > still active on Acme's, or an Acme id that someone filed under Warehouse
 > Club instead of Market. It also lists the 33 matched projects where our

@@ -36,15 +36,49 @@ const DECISION_COLUMNS = [
   "reason",
   "tier",
   "note",
+  "recommended_action",
   "status_drift",
+  "acme_city",
+  "acme_street",
+  "acme_dates",
   ...Array.from({ length: CANDIDATE_SLOTS }, (_, i) => i + 1).flatMap((n) => [
     `candidate_${n}_id`,
     `candidate_${n}_name`,
     `candidate_${n}_status`,
     `candidate_${n}_type`,
+    `candidate_${n}_city`,
+    `candidate_${n}_street`,
+    `candidate_${n}_dates`,
+    `candidate_${n}_evidence`,
     `candidate_${n}_score`,
   ]),
 ] as const;
+
+/** What a reviewer should do with a row, phrased for the person, derived from the reason. */
+export function recommendedAction(d: MatchDecision): string {
+  switch (d.reason) {
+    case "AMBIGUOUS":
+      return "Two or more Pulley projects fit equally; pick the real one (the other is likely a duplicate) and record it in overrides.csv";
+    case "STATUS_CONFLICT":
+      return "One side is canceled or closed and the other is not; confirm the true status, fix it in the lagging system, or record no_match";
+    case "TYPE_MISMATCH":
+      return "The only project at this store is a different kind of work; confirm whether this line was folded into that permit";
+    case "YEAR_CONFLICT":
+      return "This permit is claimed by lines from different program years; decide which year it covers";
+    case "ID_OUTSIDE_SCOPE":
+      return "The Acme id is on a project filed under the other banner or state; correct the Pulley project or record no_match";
+    case "STATUS_UNKNOWN":
+      return "A status value is new; tell engineering what it means so the rule can be applied";
+    case "WEAK_EVIDENCE":
+      return "Only locality evidence; verify by site, and open a Pulley project if none exists";
+    case "UNRELATED_ONLY":
+    case "EXCLUDED_ONLY":
+    case "NO_CANDIDATE":
+      return "";
+    default:
+      return "";
+  }
+}
 
 function decisionRow(d: MatchDecision): Record<string, string | number> {
   const row: Record<string, string | number> = {
@@ -58,7 +92,11 @@ function decisionRow(d: MatchDecision): Record<string, string | number> {
     reason: d.reason,
     tier: d.tier ?? "",
     note: d.note,
+    recommended_action: d.status === "needs_review" ? recommendedAction(d) : "",
     status_drift: d.statusDrift ?? "",
+    acme_city: d.acmeCity,
+    acme_street: d.acmeStreet,
+    acme_dates: d.acmeDates,
   };
   for (let i = 0; i < CANDIDATE_SLOTS; i++) {
     const c = d.candidates[i];
@@ -67,6 +105,10 @@ function decisionRow(d: MatchDecision): Record<string, string | number> {
     row[`candidate_${n}_name`] = c?.pulleyName ?? "";
     row[`candidate_${n}_status`] = c?.pulleyStatus ?? "";
     row[`candidate_${n}_type`] = c?.pulleyType ?? "";
+    row[`candidate_${n}_city`] = c?.pulleyCity ?? "";
+    row[`candidate_${n}_street`] = c?.pulleyStreet ?? "";
+    row[`candidate_${n}_dates`] = c?.pulleyDates ?? "";
+    row[`candidate_${n}_evidence`] = c?.evidenceSummary ?? "";
     row[`candidate_${n}_score`] = c?.score ?? "";
   }
   return row;

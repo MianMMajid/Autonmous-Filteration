@@ -26,7 +26,13 @@ import {
   type SiteDirectoryRow,
 } from "../sources/siteledger/schemas.ts";
 import { findUnknownValues, type VocabularyWarning } from "../sources/vocab.ts";
-import { type ArchiveManifestFile, createRunId, loadLatestArchive, RawArchive } from "./archive.ts";
+import {
+  type ArchiveManifestFile,
+  createRunId,
+  loadArchive,
+  loadLatestArchive,
+  RawArchive,
+} from "./archive.ts";
 
 /**
  * Acquisition: fetch (or replay) every input, archive raw bytes, parse and
@@ -39,6 +45,8 @@ export interface AcquiredInputs {
   /** "live" when fetched from both systems; "archive" when replayed via --dry-run. */
   readonly source: "live" | "archive";
   readonly archiveDirectory: string;
+  /** Manifest entries (name, kind, size, hash) of the archived inputs this run used. */
+  readonly archiveFiles: readonly ArchiveManifestFile[];
   readonly acme: {
     readonly projects: readonly ProjectRegisterRow[];
     readonly sites: readonly SiteDirectoryRow[];
@@ -53,6 +61,8 @@ export interface AcquireOptions {
   readonly config: Config;
   readonly log: Logger;
   readonly dryRun: boolean;
+  /** With dryRun: replay this archived run instead of the newest one. */
+  readonly replayRunId?: string;
   /** Injection point for tests. */
   readonly http?: HttpClient;
   readonly now?: () => Date;
@@ -102,7 +112,7 @@ async function fetchLive(options: AcquireOptions): Promise<AcquiredInputs> {
       ),
     ),
   ]);
-  await archive.finalize(now());
+  const manifest = await archive.finalize(now());
   log.info({ directory: archive.directory }, "raw inputs archived");
 
   const parsed = parseAll({
@@ -113,17 +123,27 @@ async function fetchLive(options: AcquireOptions): Promise<AcquiredInputs> {
     warnings: [...pulleyResult.warnings],
   });
 
-  return { runId, source: "live", archiveDirectory: archive.directory, ...parsed };
+  return {
+    runId,
+    source: "live",
+    archiveDirectory: archive.directory,
+    archiveFiles: manifest.files,
+    ...parsed,
+  };
 }
 
 // ---------- Replay ----------
 
 async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
   const { config, log } = options;
-  const archive = await loadLatestArchive(config.dataDir);
+  const archive = options.replayRunId
+    ? await loadArchive(config.dataDir, options.replayRunId)
+    : await loadLatestArchive(config.dataDir);
   if (!archive) {
     throw new SchemaError(
-      `No archived inputs found under ${config.dataDir}/raw. Run without --dry-run at least once first.`,
+      options.replayRunId
+        ? `No archived inputs for run ${options.replayRunId} under ${config.dataDir}/raw.`
+        : `No archived inputs found under ${config.dataDir}/raw. Run without --dry-run at least once first.`,
     );
   }
   log.info(
@@ -177,6 +197,7 @@ async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
     runId: createRunId(options.now?.() ?? new Date()),
     source: "archive",
     archiveDirectory: archive.directory,
+    archiveFiles: archive.manifest.files,
     ...parsed,
   };
 }
@@ -193,7 +214,7 @@ interface ParseAllInput {
 
 function parseAll(
   input: ParseAllInput,
-): Omit<AcquiredInputs, "runId" | "source" | "archiveDirectory"> {
+): Omit<AcquiredInputs, "runId" | "source" | "archiveDirectory" | "archiveFiles"> {
   const register = parseProjectRegister(input.projectRegister);
   const sites = parseSiteDirectory(input.siteDirectory);
   const keyDates = parseKeyDates(input.keyDates);

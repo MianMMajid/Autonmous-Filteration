@@ -6,6 +6,17 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Readiness pass: acceptance separated from ranking (soft-corroboration ties
+  go to review), order-invariant assignment resolution, one scope rule shared
+  by forward, reverse, and override checks, conflicting-duplicate quarantine,
+  input-quality gate with `--accept-input-change` (exit 8), run.json v2
+  provenance (rules and tool versions, input hashes, config, overrides hash
+  and pre-override decisions), `--replay <runId>` with hash verification,
+  `status --max-age-hours` (exit 9), review evidence columns and recommended
+  actions, tracked `overrides.csv` with author and date, preflight tarball
+  hash check, coverage thresholds and dependency advisories in CI, artifacts
+  named by run id, adjudication template. 237 tests.
+
 - Audit response: register-wide assignment pass (the full id in the name pins
   the year), locality guard on full ids whose store number identifies two
   buildings, house-number requirement and shared-street guard for addresses,

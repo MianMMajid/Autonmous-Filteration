@@ -2,17 +2,23 @@
 /**
  * Command-line entry point.
  *
- *   pnpm cli sync              pull both systems, match, write outputs
- *   pnpm cli sync --dry-run    same, but replay the newest archived inputs
+ *   pnpm cli sync                      pull both systems, match, write outputs
+ *   pnpm cli sync --dry-run            same, but replay the newest archived inputs
+ *   pnpm cli sync --replay <runId>     replay one archived run (implies --dry-run)
+ *   pnpm cli sync --accept-input-change
+ *                                      publish even if the inputs collapsed versus the previous run
+ *   pnpm cli status [--max-age-hours N]
+ *                                      show the last published result; exit 9 if older than N hours
  *   pnpm cli --help
  *
  * Exit codes are defined in src/errors.ts and documented in README.md.
  */
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { loadConfig } from "./config.ts";
-import { ExitCode, SyncError, toError } from "./errors.ts";
+import { ExitCode, StaleError, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
+import { readPublishedStatus, renderStatus } from "./run/status.ts";
 import { runSync } from "./run/sync.ts";
 
 const program = new Command();
@@ -29,20 +35,71 @@ program
     "--dry-run",
     "match against the most recent archived inputs without contacting either system",
   )
+  .option("--replay <runId>", "replay one archived run by id (implies --dry-run)")
+  .option(
+    "--accept-input-change",
+    "publish even when the inputs look incomplete or very different from the previous run",
+  )
   .option("--quiet", "do not print the summary to stdout")
-  .action(async (options: { dryRun?: boolean; quiet?: boolean }) => {
+  .action(
+    async (options: {
+      dryRun?: boolean;
+      replay?: string;
+      acceptInputChange?: boolean;
+      quiet?: boolean;
+    }) => {
+      const config = loadConfig();
+      const log = createLogger(config.logLevel);
+      const dryRun = options.dryRun === true || options.replay !== undefined;
+      log.info(
+        { dryRun, replay: options.replay ?? null, dataDir: config.dataDir },
+        "sync starting",
+      );
+
+      const outcome = await runSync({
+        config,
+        log,
+        dryRun,
+        ...(options.replay !== undefined ? { replayRunId: options.replay } : {}),
+        acceptInputChange: options.acceptInputChange === true,
+      });
+
+      if (options.quiet !== true) {
+        console.log("");
+        console.log(outcome.summary);
+      }
+    },
+  );
+
+program
+  .command("status")
+  .description("Show the last published result and how old it is.")
+  .option(
+    "--max-age-hours <hours>",
+    "exit with code 9 if the last result is older than this",
+    parseHours,
+  )
+  .action(async (options: { maxAgeHours?: number }) => {
     const config = loadConfig();
-    const log = createLogger(config.logLevel);
-    const dryRun = options.dryRun === true;
-    log.info({ dryRun, dataDir: config.dataDir }, "sync starting");
-
-    const outcome = await runSync({ config, log, dryRun });
-
-    if (options.quiet !== true) {
-      console.log("");
-      console.log(outcome.summary);
+    const maxAge = options.maxAgeHours ?? null;
+    const status = await readPublishedStatus(config.dataDir);
+    console.log(renderStatus(status, maxAge));
+    if (!status) throw new StaleError("No published result yet");
+    if (maxAge !== null && status.ageHours > maxAge) {
+      throw new StaleError(
+        `Last published result ${status.runId} is ${status.ageHours.toFixed(1)} h old, older than ${maxAge} h`,
+        { details: { runId: status.runId, publishedAt: status.publishedAt } },
+      );
     }
   });
+
+function parseHours(value: string): number {
+  const hours = Number(value);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new InvalidArgumentError("must be a positive number of hours");
+  }
+  return hours;
+}
 
 async function main(): Promise<void> {
   try {

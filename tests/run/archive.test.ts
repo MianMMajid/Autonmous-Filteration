@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { IoError } from "../../src/errors.ts";
-import { createRunId, loadLatestArchive, RawArchive } from "../../src/run/archive.ts";
+import { IoError, SchemaError } from "../../src/errors.ts";
+import { createRunId, loadArchive, loadLatestArchive, RawArchive } from "../../src/run/archive.ts";
 import { pruneRuns, updateLatest, writeOutputs } from "../../src/run/outputs.ts";
 
 let dataDir: string;
@@ -75,7 +75,12 @@ describe("RawArchive", () => {
       "page-1.json",
       ".._escape.json",
     ]);
-    expect(manifest.files[0]).toEqual({ name: "register.xls", kind: "project-register", bytes: 2 });
+    expect(manifest.files[0]).toMatchObject({
+      name: "register.xls",
+      kind: "project-register",
+      bytes: 2,
+    });
+    expect(manifest.files[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest.files[1]?.page).toBe(1);
 
     const written = JSON.parse(await readFile(join(newer.directory, "manifest.json"), "utf8"));
@@ -100,6 +105,18 @@ describe("RawArchive", () => {
     expect(
       await readFile(join(dataDir, "out", "2026-10-08T12-00-00-000Z", "mapping.csv"), "utf8"),
     ).toBe("first");
+  });
+
+  it("detects an archived file that no longer matches its recorded hash", async () => {
+    const a = new RawArchive(dataDir, "2026-10-08T14-00-00-000Z");
+    await a.init();
+    await a.write("dates.csv", "key-dates", "a,b\n1,2\n");
+    const manifest = await a.finalize();
+    await writeFile(join(a.directory, "dates.csv"), "a,b\n9,9\n");
+    const loaded = await loadArchive(dataDir, "2026-10-08T14-00-00-000Z");
+    await expect(
+      loaded?.read(manifest.files[0] as NonNullable<(typeof manifest.files)[0]>),
+    ).rejects.toBeInstanceOf(SchemaError);
   });
 
   it("returns null when nothing has been archived", async () => {

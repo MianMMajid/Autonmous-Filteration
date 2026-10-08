@@ -1,7 +1,8 @@
 import type { MatchReport } from "../domain/match/types.ts";
 import type { NormalizedInputs } from "../domain/model.ts";
 import type { AcquiredInputs } from "../run/acquire.ts";
-import type { RunDiff } from "./diff.ts";
+import type { QualityAssessment } from "../run/quality.ts";
+import type { PreviousDecision, RunDiff } from "./diff.ts";
 
 /**
  * Human-readable run summary. This is what Permit Ops reads first, so it
@@ -16,6 +17,9 @@ export interface SummaryInput {
   readonly report: MatchReport;
   readonly diff: RunDiff;
   readonly overrides: { readonly applied: number; readonly problems: readonly string[] };
+  readonly quality: QualityAssessment & { readonly accepted: boolean };
+  readonly previousDecisions: readonly PreviousDecision[] | null;
+  readonly rulesVersion: string;
   readonly outputDirectory: string;
 }
 
@@ -24,13 +28,16 @@ const MAX_LISTED = 25;
 export function renderSummary(s: SummaryInput): string {
   const sections = [
     headerSection(s),
+    qualitySection(s.quality),
     changesSection(s.diff),
     reviewSection(s.report),
+    workloadSection(s.report, s.previousDecisions),
     statusDriftSection(s.report),
     overridesSection(s.overrides),
     warningsSection(s),
     pulleySideSection(s.report),
     filesSection(s.outputDirectory),
+    [provenanceLine(s.rulesVersion)],
   ];
   return `${sections
     .filter((lines) => lines.length > 0)
@@ -56,6 +63,44 @@ function headerSection(s: SummaryInput): string[] {
     `Results: matched ${s.report.counts.matched} (${pct(s.report.counts.matched)}%), ` +
       `needs_review ${s.report.counts.needs_review}, no_match ${s.report.counts.no_match}`,
     `By reason: ${reasons}`,
+  ];
+}
+
+function qualitySection(q: SummaryInput["quality"]): string[] {
+  if (q.blockers.length === 0 && q.warnings.length === 0) return [];
+  const lines: string[] = [];
+  if (q.blockers.length > 0) {
+    lines.push(
+      q.accepted
+        ? "Input quality: publication was forced with --accept-input-change despite:"
+        : "Input quality: publication blocked:",
+    );
+    for (const b of q.blockers) lines.push(`  ${b}`);
+  }
+  if (q.warnings.length > 0) {
+    lines.push("Input quality notes:");
+    for (const w of q.warnings) lines.push(`  ${w}`);
+  }
+  return lines;
+}
+
+/** How much new review work this run created, versus rows already pending. */
+function workloadSection(
+  report: MatchReport,
+  previous: readonly PreviousDecision[] | null,
+): string[] {
+  if (!previous) return [];
+  const before = new Set(previous.filter((d) => d.status === "needs_review").map((d) => d.acmeId));
+  const now = new Set(
+    report.decisions.filter((d) => d.status === "needs_review").map((d) => d.acmeId),
+  );
+  const fresh = [...now].filter((id) => !before.has(id));
+  const resolved = [...before].filter((id) => !now.has(id));
+  const pending = [...now].filter((id) => before.has(id));
+  return [
+    `Review workload: ${fresh.length} new, ${resolved.length} resolved since the previous run, ${pending.length} still pending from before`,
+    ...(fresh.length > 0 ? [`  new: ${fresh.slice(0, MAX_LISTED).join(", ")}`] : []),
+    ...(resolved.length > 0 ? [`  resolved: ${resolved.slice(0, MAX_LISTED).join(", ")}`] : []),
   ];
 }
 
@@ -149,4 +194,8 @@ function filesSection(outputDirectory: string): string[] {
     "  run.json              machine-readable record used for the next run's diff",
     "  summary.txt           this text",
   ];
+}
+
+export function provenanceLine(rulesVersion: string): string {
+  return `Rules version ${rulesVersion}; inputs, hashes, config, and overrides are recorded in run.json`;
 }

@@ -54,11 +54,20 @@ jobs:
           path: data
           key: sync-data-${{ github.run_id }}
 
+      - name: Read the published run id
+        if: success()
+        id: published
+        run: echo "run_id=$(node -p "require('./data/out/latest.json').runId")" >> "$GITHUB_OUTPUT"
+
       - name: Publish outputs
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: siteledger-sync-${{ github.run_id }}
+          name: siteledger-sync-${{ steps.published.outputs.run_id }}
           path: data/out/latest/
           retention-days: 30
-          if-no-files-found: ignore
+          if-no-files-found: error
+
+      - name: Freshness check (fails the job if the published result is older than a day)
+        if: success()
+        run: pnpm cli status --max-age-hours 24

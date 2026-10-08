@@ -28,6 +28,7 @@ function config(): Config {
     logLevel: "error",
     dataDir,
     retainRuns: 60,
+    overridesFile: join(dataDir, "overrides.csv"),
   };
 }
 

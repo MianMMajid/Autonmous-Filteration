@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { matchProjects } from "../../../src/domain/match/matcher.ts";
+import type { MatchDecision } from "../../../src/domain/match/types.ts";
 import { OutputStatus, ReasonCode, Tier } from "../../../src/domain/match/types.ts";
 import { Banner } from "../../../src/domain/model.ts";
 import { normalizeInputs } from "../../../src/domain/normalize/build.ts";
@@ -551,6 +552,48 @@ describe("matchProjects: audit cases", () => {
   });
 });
 
+describe("matchProjects: acceptance policy and order invariance", () => {
+  it("treats candidates that differ only in jurisdiction wording as a tie", () => {
+    const d = one({ city: "Reno" }, [
+      pulley({ id: "prj_reno", name: "1556.1002 - Reno, NV", jurisdictionCity: "Reno" }),
+      pulley({
+        id: "prj_washoe",
+        name: "1556.1002 - Washoe County, NV",
+        jurisdictionCity: "Washoe County",
+      }),
+    ]);
+    expect(d).toMatchObject({ status: "needs_review", reason: ReasonCode.Ambiguous });
+    expect(d.candidates.map((c) => c.pulleyId).sort()).toEqual(["prj_reno", "prj_washoe"]);
+  });
+
+  it("still accepts when hard evidence separates the candidates", () => {
+    const d = one({ city: "Reno", dates: { constructionStart: "2027-06-01" } }, [
+      pulley({ id: "prj_a", name: "1556.1002 - Reno, NV", constructionStart: "2027-06-02" }),
+      pulley({
+        id: "prj_b",
+        name: "1556.1002 - Washoe County, NV",
+        jurisdictionCity: "Washoe County",
+      }),
+    ]);
+    expect(d).toMatchObject({ status: "matched", pulleyId: "prj_a" });
+  });
+
+  it("does not let register order choose between two equally supported years", () => {
+    const project = pulley({ id: "prj_x", name: "#1556 Reno, NV", projectType: "Remodel" });
+    const a = acme({ sequence: 1004, programYear: 2027, projectType: "Remodel" });
+    const b = acme({ sequence: 1005, programYear: 2028, projectType: "Remodel" });
+    const forward = matchProjects(inputs([a, b], [project]));
+    const backward = matchProjects(inputs([b, a], [project]));
+    for (const report of [forward, backward]) {
+      expect(
+        report.decisions.every(
+          (d) => d.status === "needs_review" && d.reason === ReasonCode.YearConflict,
+        ),
+      ).toBe(true);
+    }
+  });
+});
+
 describe("matchProjects: year conflicts across claims", () => {
   it("keeps the strong claim and sends the other year's claim to review", () => {
     const store = pulley({
@@ -726,6 +769,31 @@ describe("matchProjects on the real dataset", () => {
       expect(winner?.evidence.typeCompatible).toBe(true);
       expect(winner?.evidence.statusAgree, d.acmeId).toBe(true);
     }
+  });
+
+  it("is invariant to the order of the register and the pool", () => {
+    const shuffled = (n: number) => {
+      // Deterministic pseudo-random permutation so the test is repeatable.
+      const order = Array.from({ length: n }, (_, i) => i);
+      let seed = 42;
+      for (let i = n - 1; i > 0; i--) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        const j = seed % (i + 1);
+        [order[i], order[j]] = [order[j] as number, order[i] as number];
+      }
+      return order;
+    };
+    const acmeOrder = shuffled(normalized.acme.length);
+    const pulleyOrder = shuffled(normalized.pulley.length);
+    const permuted = {
+      ...normalized,
+      acme: acmeOrder.map((i) => normalized.acme[i] as (typeof normalized.acme)[number]),
+      pulley: pulleyOrder.map((i) => normalized.pulley[i] as (typeof normalized.pulley)[number]),
+    };
+    const key = (d: MatchDecision) => `${d.acmeId}|${d.status}|${d.pulleyId}|${d.reason}`;
+    expect(matchProjects(permuted).decisions.map(key).sort()).toEqual(
+      report.decisions.map(key).sort(),
+    );
   });
 
   it("never assigns one Pulley project to Acme lines from different sites or years", () => {

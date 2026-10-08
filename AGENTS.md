@@ -29,6 +29,8 @@ Credentials come from the person who handed you this repo. Never commit `.env`.
 pnpm sync               # full run; prints the summary; outputs under data/out/<timestamp>/
 pnpm sync --dry-run     # re-match the last archived inputs, no network
 pnpm sync --quiet       # no summary on stdout (logs still go to stdout as JSON)
+pnpm sync --replay <id> # replay one archived run by id
+pnpm cli status --max-age-hours 24   # freshness; exit 9 if stale
 pnpm cli --help
 ```
 
@@ -61,8 +63,12 @@ pnpm test
   common key names as a backstop only.
 - The Key Dates CSV mixes `MM/DD/YYYY` and `YYYY-MM-DD` in the same column.
   `reportDateSchema` accepts both on purpose; do not narrow it.
-- `data/overrides.csv` (optional) replaces matcher decisions with human ones
-  and is validated on every run; see `docs/OPERATIONS.md`.
+- `overrides.csv` at the repo root (tracked) replaces matcher decisions with
+  human ones; it is re-validated against banner, state, and the status gate on
+  every run. `data/` is ignored and holds only run artifacts.
+- `run.json` is format version 2 with provenance (rules version, input
+  hashes, overrides hash). Bump `RULES_VERSION` in `matcher.ts` when a rule
+  or weight changes.
 - Run ids include milliseconds and run directories are created exclusively;
   never add code that deletes or reuses an existing run directory.
 - The lock is created with `link` and stale locks are claimed with `rename`,

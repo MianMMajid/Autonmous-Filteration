@@ -139,17 +139,54 @@ const previousDecisionSchema = z.looseObject({
   pulleyId: z.string().nullable(),
 });
 
-const runRecordSchema = z.looseObject({
-  version: z.literal(1),
-  runId: z.string().min(1),
-  decisions: z.array(previousDecisionSchema),
+const inputCountsSchema = z.object({
+  acmeProjects: z.number().int(),
+  acmeSites: z.number().int(),
+  acmeKeyDates: z.number().int(),
+  pulleyProjects: z.number().int(),
 });
 
+const runRecordSchema = z.looseObject({
+  version: z.union([z.literal(1), z.literal(2)]),
+  runId: z.string().min(1),
+  decisions: z.array(previousDecisionSchema),
+  counts: z.object({ matched: z.number().int() }).loose().optional(),
+  inputs: z.object({ counts: inputCountsSchema }).loose().optional(),
+});
+
+/**
+ * Everything needed to attribute and reproduce a run: which rules, which
+ * tool version, which input bytes, which configuration, which human
+ * decisions, and what the matcher decided before those decisions applied.
+ */
 export interface RunRecordInput {
   readonly runId: string;
   readonly createdAt: string;
+  readonly publishedAt: string;
   readonly source: "live" | "archive";
-  readonly archiveDirectory: string;
+  readonly toolVersion: string;
+  readonly rulesVersion: string;
+  readonly inputs: {
+    readonly archiveDirectory: string;
+    readonly files: readonly unknown[];
+    readonly counts: {
+      acmeProjects: number;
+      acmeSites: number;
+      acmeKeyDates: number;
+      pulleyProjects: number;
+    };
+  };
+  /** Non-secret configuration that influences decisions. */
+  readonly config: Readonly<Record<string, string | number | boolean>>;
+  readonly quality: { blockers: readonly string[]; warnings: readonly string[]; accepted: boolean };
+  readonly overrides: {
+    readonly path: string;
+    readonly sha256: string | null;
+    readonly applied: number;
+    readonly problems: readonly string[];
+    /** The matcher's decision for every row a human decision replaced. */
+    readonly overridden: readonly unknown[];
+  };
   readonly counts: Readonly<Record<string, number>>;
   readonly reasons: Readonly<Record<string, number>>;
   readonly decisions: readonly MatchDecision[];
@@ -157,12 +194,19 @@ export interface RunRecordInput {
 }
 
 export function renderRunRecord(input: RunRecordInput): string {
-  return `${JSON.stringify({ version: 1, ...input }, null, 2)}\n`;
+  return `${JSON.stringify({ version: 2, ...input }, null, 2)}\n`;
 }
 
 export interface PreviousRun {
   readonly runId: string;
   readonly decisions: readonly PreviousDecision[];
+  readonly inputCounts: {
+    acmeProjects: number;
+    acmeSites: number;
+    acmeKeyDates: number;
+    pulleyProjects: number;
+  } | null;
+  readonly matched: number | null;
 }
 
 /** The last successful run, via `latest.json`; null when there is none or it is unreadable. */
@@ -190,6 +234,8 @@ export async function loadPreviousRun(dataDir: string): Promise<PreviousRun | nu
         status: d.status,
         pulleyId: d.pulleyId,
       })),
+      inputCounts: record.data.inputs?.counts ?? null,
+      matched: record.data.counts?.matched ?? null,
     };
   } catch {
     return null;
