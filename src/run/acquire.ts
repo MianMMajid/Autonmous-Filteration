@@ -45,6 +45,8 @@ export interface AcquiredInputs {
   /** "live" when fetched from both systems; "archive" when replayed via --dry-run. */
   readonly source: "live" | "archive";
   readonly archiveDirectory: string;
+  /** When the source bytes were fetched from the upstream systems (not when this run happened). */
+  readonly sourceAcquiredAt: string;
   /** Manifest entries (name, kind, size, hash) of the archived inputs this run used. */
   readonly archiveFiles: readonly ArchiveManifestFile[];
   readonly acme: {
@@ -127,6 +129,7 @@ async function fetchLive(options: AcquireOptions): Promise<AcquiredInputs> {
     runId,
     source: "live",
     archiveDirectory: archive.directory,
+    sourceAcquiredAt: manifest.createdAt,
     archiveFiles: manifest.files,
     ...parsed,
   };
@@ -197,6 +200,7 @@ async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
     runId: createRunId(options.now?.() ?? new Date()),
     source: "archive",
     archiveDirectory: archive.directory,
+    sourceAcquiredAt: archive.manifest.createdAt,
     archiveFiles: archive.manifest.files,
     ...parsed,
   };
@@ -214,7 +218,10 @@ interface ParseAllInput {
 
 function parseAll(
   input: ParseAllInput,
-): Omit<AcquiredInputs, "runId" | "source" | "archiveDirectory" | "archiveFiles"> {
+): Omit<
+  AcquiredInputs,
+  "runId" | "source" | "archiveDirectory" | "archiveFiles" | "sourceAcquiredAt"
+> {
   const register = parseProjectRegister(input.projectRegister);
   const sites = parseSiteDirectory(input.siteDirectory);
   const keyDates = parseKeyDates(input.keyDates);

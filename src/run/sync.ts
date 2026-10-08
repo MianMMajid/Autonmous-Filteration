@@ -15,6 +15,7 @@ import { diffRuns, type RunDiff } from "../output/diff.ts";
 import { renderSummary } from "../output/summary.ts";
 import type { HttpClient } from "../sources/http.ts";
 import { type AcquireOptions, acquireInputs } from "./acquire.ts";
+import { assertPublicationInvariants } from "./invariants.ts";
 import { acquireLock } from "./lock.ts";
 import {
   loadPreviousRun,
@@ -127,6 +128,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     for (const problem of overrides.problems) log.warn(problem);
     if (overrides.applied > 0) log.info({ applied: overrides.applied }, "overrides applied");
     const report = overrides.report;
+    assertPublicationInvariants(report.decisions, normalized.acme, normalized.pulley);
 
     const previous = await loadPreviousRun(config.dataDir);
     const counts = {
@@ -176,6 +178,7 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
         runId: inputs.runId,
         createdAt: publishedAt,
         publishedAt,
+        sourceAcquiredAt: inputs.sourceAcquiredAt,
         source: inputs.source,
         toolVersion: TOOL_VERSION,
         rulesVersion: RULES_VERSION,

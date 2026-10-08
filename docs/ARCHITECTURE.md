@@ -46,6 +46,7 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/run/outputs.ts` | atomic output directory, latest pointer, run record | done |
 | `src/run/overrides.ts` | human decisions from overrides.csv, validated and applied | done |
 | `src/run/quality.ts` | semantic input checks versus the previous run | done |
+| `src/run/invariants.ts` | the publication boundary: hard rules over the combined result | done |
 | `src/run/status.ts` | freshness of the last published result | done |
 | `src/run/sync.ts` | the whole run in order; publication is the commit point | done |
 
@@ -76,7 +77,8 @@ Defined in `src/errors.ts`.
 | 6 | `LockedError` | Another run in progress |
 | 7 | `IoError` | Filesystem failure |
 | 8 | `QualityError` | Inputs schema-valid but empty or collapsed; nothing published |
-| 9 | `StaleError` | `status`: nothing published or older than the limit |
+| 9 | `StaleError` | `status`: nothing published, or result or source older than the limit |
+| 10 | `InvariantError` | Combined result broke a hard rule; a tool defect; nothing published |
 
 ## Run artifacts
 

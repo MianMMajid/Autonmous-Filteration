@@ -134,6 +134,7 @@ function buildAcmeProjects(
 ): AcmeProject[] {
   const projects: AcmeProject[] = [];
   const seen = new Map<string, ProjectRegisterRow>();
+  const disputedIds = new Map<string, string>();
   let duplicates = 0;
   let conflicting = 0;
   let missingSite = 0;
@@ -144,10 +145,16 @@ function buildAcmeProjects(
   for (const row of rows) {
     const first = seen.get(row.projectId);
     if (first) {
-      // Every register row must yield one decision, so the first row stands;
-      // a conflicting repeat is reported rather than silently dropped.
-      if (JSON.stringify(first) !== JSON.stringify(row)) conflicting++;
-      else duplicates++;
+      // Every register row must yield one decision, so the first row stands,
+      // but a conflicting repeat marks the id as disputed: it is never
+      // auto-matched, so row order cannot change a confident mapping.
+      const dispute = registerDispute(first, row);
+      if (dispute) {
+        conflicting++;
+        disputedIds.set(row.projectId, dispute);
+      } else {
+        duplicates++;
+      }
       continue;
     }
     seen.set(row.projectId, row);
@@ -156,17 +163,18 @@ function buildAcmeProjects(
     const store = Number(storeText);
     const sequence = Number(sequenceText);
     const site = sitesById.get(row.siteId) ?? null;
-    if (!site) {
-      if (quarantined.quarantinedSites.has(row.siteId)) quarantinedSite++;
-      else missingSite++;
-    } else if (store !== site.locationNumber && store !== site.formerLocationNumber) {
-      storeMismatch++;
-    }
+    const siteIssue = siteJoinIssue(site, store, row.siteId, quarantined.quarantinedSites);
+    if (siteIssue === "quarantined") quarantinedSite++;
+    else if (siteIssue === "missing") missingSite++;
+    else if (siteIssue === "mismatch") storeMismatch++;
 
     const dates = datesById.get(row.projectId) ?? null;
     if (!dates && !quarantined.quarantinedDates.has(row.projectId)) missingDates++;
 
     const parsedName = parseProjectName(row.projectName);
+    const siteDisputed = quarantined.quarantinedSites.has(row.siteId)
+      ? `Site ${row.siteId} appears in the Site Directory with conflicting content`
+      : null;
     // Without a site row the banner still comes from the canonical name's code.
     const banner =
       site?.banner ??
@@ -184,6 +192,7 @@ function buildAcmeProjects(
       status: row.status,
       banner,
       site,
+      identityDisputed: siteDisputed,
       dates: dates
         ? {
             designStart: dates.designStart,
@@ -206,7 +215,33 @@ function buildAcmeProjects(
       missingDates,
     }),
   );
-  return projects;
+  // Register conflicts are only known once every row has been seen.
+  return projects.map((p) => {
+    const dispute = disputedIds.get(p.id);
+    return dispute ? { ...p, identityDisputed: p.identityDisputed ?? dispute } : p;
+  });
+}
+
+type SiteJoinIssue = "ok" | "missing" | "quarantined" | "mismatch";
+
+function siteJoinIssue(
+  site: AcmeSite | null,
+  store: number,
+  siteId: string,
+  quarantinedSites: ReadonlySet<string>,
+): SiteJoinIssue {
+  if (!site) return quarantinedSites.has(siteId) ? "quarantined" : "missing";
+  if (store !== site.locationNumber && store !== site.formerLocationNumber) return "mismatch";
+  return "ok";
+}
+
+/** Null for an identical repeat; otherwise why the repeat makes the id disputed. */
+function registerDispute(first: ProjectRegisterRow, repeat: ProjectRegisterRow): string | null {
+  const differing = (Object.keys(first) as Array<keyof ProjectRegisterRow>).filter(
+    (k) => first[k] !== repeat[k],
+  );
+  if (differing.length === 0) return null;
+  return `Project Register has conflicting rows for ${repeat.projectId} (differs in ${differing.join(", ")})`;
 }
 
 function joinWarnings(counts: {

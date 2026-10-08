@@ -200,6 +200,31 @@ The estimate is unchanged. The audit is right that no precision figure can
 be established without adjudicated correct mappings; the figure here rests
 on the hand check described above and should be read as such.
 
+## Fifth pass: round-two audit (same day)
+
+An independent audit at commit `0b7e1e5` (`docs/BUG_AUDIT_ROUND_2.md`)
+reproduced ten defects. Each is fixed with a regression test in
+`tests/audit-round-2.test.ts`, which replaces the audit's probe script (the
+probes asserted the defects; the tests assert the required behavior).
+
+| Finding | Fix |
+|---|---|
+| R2-01 conflicting strong anchors | Anchors of equal strength must agree on one site and year; otherwise every claim goes to review |
+| R2-02 stale recovery displacing a live owner | Removal of a dead owner's lock happens only under a reclaim mutex, after re-checking liveness while holding it; deterministic interleaving test |
+| R2-03 freshness step needing credentials | `status` loads only local settings; clean-environment CLI test |
+| R2-04 quarantine making matching less conservative | Disputed identity travels with the project and blocks auto-matching (`IDENTITY_DISPUTED`) |
+| R2-05 overrides bypassing assignment and temporal rules | Temporal conflict rejects an override; after all overrides, cross-site or cross-year sharing withdraws the overrides involved; a final invariant check guards publication (exit 10) |
+| R2-06 register duplicates order-dependent | Conflicting register rows mark the id disputed, so the decision is review in any order |
+| R2-07 acceptance from the wrong reference | The tie set is computed from the maximum decisive score |
+| R2-08 unknown organizations comparing equal | Scope requires a known, equal banner and a known, equal state |
+| R2-09 retention deleting a replay's archive | Pruning protects every archive a retained output references |
+| R2-10 out-of-scope collisions | Shared-number and shared-street indexes are keyed by banner and state |
+
+Source freshness is now recorded (`sourceAcquiredAt` in `run.json`) and
+`status --max-source-age-hours` checks it separately from publication age.
+
+Results after the fifth pass: see the counts in `docs/MATCHING.md`.
+
 ## How to repeat this
 
 ```sh

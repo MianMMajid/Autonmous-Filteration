@@ -36,8 +36,23 @@ tier candidates are ranked by evidence (see Scoring); a unique best candidate
 wins, a tie produces `needs_review` with all candidates listed. Ranking and
 acceptance are separate: two candidates that differ only in soft
 corroboration (jurisdiction city, street name without house number) are a
-tie, because the brief says those names legitimately differ. Only hard
-evidence separates candidates for automatic acceptance. Tiers 2 to 6
+tie, because the brief says those names legitimately differ. Only hard evidence separates candidates for automatic acceptance, and the
+acceptance tie set is computed from the best *decisive* score, not from the
+display ordering, so a soft bonus can never promote a weaker candidate.
+
+**Disputed identity.** A project whose Site Directory rows conflict, or
+whose register rows conflict, carries that dispute into matching and is
+never auto-matched: the row goes to review as `IDENTITY_DISPUTED` naming the
+project it would otherwise have matched. Contradictory source rows must
+never raise confidence.
+
+**Unknown scope.** Banner and state must both be known and equal for a
+candidate to be in scope. Two unknown organization labels are not evidence
+of agreement; such rows reach review as `ID_OUTSIDE_SCOPE`.
+
+**Collision indexes are scoped.** A store number or street shared by two
+buildings only counts as a collision within one banner and state, so an
+unrelated organization's site elsewhere cannot change a decision. Tiers 2 to 6
 first drop candidates whose temporal verdict is `conflict` (see Temporal
 evidence): the brief folds several Acme lines into one permit only for the
 same store and the same year.
@@ -63,9 +78,11 @@ claimed by Acme lines from different sites or program years (possible when
 the project has no dates to conflict with) is resolved across the register.
 The full id written in the name pins the project to that line's year and
 anchors the group; failing that, claims with dates within a week anchor it;
-failing that, the best-scored claim, and if the best scores tie across sites
-or years nothing anchors and every claim goes to review, so input order can
-never pick a winner. Every non-anchored site-and-year claim goes to
+failing that, the best-scored claim. Anchors of equal strength that disagree
+with each other (two full ids from different years on one name, or two
+lines with the same exact dates in different years) anchor nothing, and so
+does a tie among best scores: every claim goes to review, and input order
+can never pick a winner. Every non-anchored site-and-year claim goes to
 `needs_review` (`YEAR_CONFLICT`). Tests enforce that no Pulley project is
 ever assigned to two sites or two years and that decisions are invariant to
 the order of the register and the pool.
@@ -135,6 +152,7 @@ dates.
 | Best candidate has incompatible type otherwise | `needs_review` (`TYPE_MISMATCH`) |
 | Best candidate fails the status gate | `needs_review` (`STATUS_CONFLICT`) |
 | A status on either side has no known lifecycle meaning | `needs_review` (`STATUS_UNKNOWN`) |
+| The Acme project's own source rows conflict | `needs_review` (`IDENTITY_DISPUTED`) |
 | Only store-identified projects in other years | `no_match` (`UNRELATED_ONLY`, other year) |
 | Exact id found only on the other banner or state | `needs_review` (`ID_OUTSIDE_SCOPE`) |
 | Same Pulley project claimed from another program year without strong evidence | `needs_review` (`YEAR_CONFLICT`) |
@@ -158,6 +176,15 @@ compares its inputs and outcome with the previous successful run:
 A refused publication exits with code 8, names the condition, points at the
 archived inputs, and leaves `latest.json` untouched. `--accept-input-change`
 publishes anyway and records that choice in `run.json`.
+
+**Publication invariants.** After normalization, matching, the assignment
+pass, and human overrides, the combined result is checked once more before
+anything is written: one decision per register row; every matched row has
+an in-scope target that passes the status gate and is not disputed; no
+non-matched row carries a target; and no Pulley project is assigned to more
+than one building or year. A violation is a defect in the tool, exits with
+code 10, and publishes nothing. Overrides that would create such a conflict
+are withdrawn with a reconfirmation message before this check runs.
 
 ## Status gate
 

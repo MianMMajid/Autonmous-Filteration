@@ -70,4 +70,4 @@ jobs:
 
       - name: Freshness check (fails the job if the published result is older than a day)
         if: success()
-        run: pnpm cli status --max-age-hours 24
+        run: pnpm cli status --max-age-hours 24 --max-source-age-hours 24

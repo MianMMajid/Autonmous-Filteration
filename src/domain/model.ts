@@ -84,6 +84,12 @@ export interface AcmeProject {
   readonly banner: Banner | null;
   readonly site: AcmeSite | null;
   readonly dates: AcmeDates | null;
+  /**
+   * Why this project's identity cannot be trusted automatically: conflicting
+   * Site Directory rows for its site, or conflicting register rows for its
+   * id. A disputed project is never auto-matched; it goes to review.
+   */
+  readonly identityDisputed: string | null;
 }
 
 export interface PulleyRecord {

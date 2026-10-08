@@ -20,19 +20,32 @@ function required(name: string): z.ZodString {
   return z.string({ error: message }).trim().min(1, message);
 }
 
-const envSchema = z.object({
-  SITELEDGER_BASE_URL: z.url().default(DEFAULT_BASE_URL),
-  SITELEDGER_USERNAME: required("SITELEDGER_USERNAME"),
-  SITELEDGER_PASSWORD: required("SITELEDGER_PASSWORD"),
-  PULLEY_BASE_URL: z.url().default(DEFAULT_BASE_URL),
-  PULLEY_API_KEY: required("PULLEY_API_KEY"),
+/** Settings a local command (status, replay) needs; no credentials. */
+const localSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default("warn"),
   DATA_DIR: z.string().trim().min(1).default("./data"),
   RETAIN_RUNS: z.coerce.number().int().min(1).default(60),
   OVERRIDES_FILE: z.string().trim().min(1).default("./overrides.csv"),
 });
 
-export interface Config {
+const envSchema = localSchema.extend({
+  SITELEDGER_BASE_URL: z.url().default(DEFAULT_BASE_URL),
+  SITELEDGER_USERNAME: required("SITELEDGER_USERNAME"),
+  SITELEDGER_PASSWORD: required("SITELEDGER_PASSWORD"),
+  PULLEY_BASE_URL: z.url().default(DEFAULT_BASE_URL),
+  PULLEY_API_KEY: required("PULLEY_API_KEY"),
+});
+
+export interface LocalConfig {
+  readonly logLevel: LogLevel;
+  readonly dataDir: string;
+  /** How many past runs to keep under data/raw and data/out. */
+  readonly retainRuns: number;
+  /** Human decisions file; tracked in the repository by default, unlike data/. */
+  readonly overridesFile: string;
+}
+
+export interface Config extends LocalConfig {
   readonly siteLedger: {
     readonly baseUrl: string;
     readonly username: string;
@@ -42,12 +55,6 @@ export interface Config {
     readonly baseUrl: string;
     readonly apiKey: string;
   };
-  readonly logLevel: LogLevel;
-  readonly dataDir: string;
-  /** How many past runs to keep under data/raw and data/out. */
-  readonly retainRuns: number;
-  /** Human decisions file; tracked in the repository by default, unlike data/. */
-  readonly overridesFile: string;
 }
 
 /** Names of the variables an operator must supply. Used by `preflight`. */
@@ -64,16 +71,7 @@ export const REQUIRED_ENV_VARS = [
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const result = envSchema.safeParse(env);
-  if (!result.success) {
-    const problems = result.error.issues.map((issue) => {
-      const key = issue.path.join(".") || "(root)";
-      return `${key}: ${issue.message}`;
-    });
-    throw new ConfigError(
-      `Invalid configuration. Copy .env.example to .env and fill it in.\n  - ${problems.join("\n  - ")}`,
-      { details: { problems } },
-    );
-  }
+  if (!result.success) return fail(result.error.issues);
   const parsed = result.data;
   return {
     siteLedger: {
@@ -89,6 +87,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dataDir: parsed.DATA_DIR,
     retainRuns: parsed.RETAIN_RUNS,
     overridesFile: parsed.OVERRIDES_FILE,
+  };
+}
+
+function fail(issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>): never {
+  const problems = issues.map((issue) => {
+    const key = issue.path.join(".") || "(root)";
+    return `${key}: ${issue.message}`;
+  });
+  throw new ConfigError(
+    `Invalid configuration. Copy .env.example to .env and fill it in.\n  - ${problems.join("\n  - ")}`,
+    { details: { problems } },
+  );
+}
+
+/** Configuration for commands that only read local state; never asks for credentials. */
+export function loadLocalConfig(env: NodeJS.ProcessEnv = process.env): LocalConfig {
+  const result = localSchema.safeParse(env);
+  if (!result.success) return fail(result.error.issues);
+  return {
+    logLevel: result.data.LOG_LEVEL,
+    dataDir: result.data.DATA_DIR,
+    retainRuns: result.data.RETAIN_RUNS,
+    overridesFile: result.data.OVERRIDES_FILE,
   };
 }
 

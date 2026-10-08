@@ -94,19 +94,32 @@ async function exists(path: string): Promise<boolean> {
 export async function pruneRuns(dataDir: string, keep: number): Promise<string[]> {
   const removed: string[] = [];
   const latest = await currentLatestRunId(dataDir);
-  for (const root of [join(dataDir, "raw"), join(dataDir, OUT_DIRNAME)]) {
-    let entries: string[];
-    try {
-      entries = (await readdir(root, { withFileTypes: true }))
-        .filter((e) => e.isDirectory() && RUN_DIR.test(e.name))
-        .map((e) => e.name)
-        .sort();
-    } catch {
-      continue;
-    }
-    const excess = entries.slice(0, Math.max(0, entries.length - keep));
-    for (const name of excess) {
-      if (name === latest) continue;
+  const outRoot = join(dataDir, OUT_DIRNAME);
+  const rawRoot = join(dataDir, "raw");
+
+  const outputs = await runDirectories(outRoot);
+  const keptOutputs = new Set(outputs.slice(Math.max(0, outputs.length - keep)));
+  if (latest) keptOutputs.add(latest);
+  // Every retained output must keep the archive it was computed from, so a
+  // replayed result (new output id, old archive) stays reproducible.
+  const protectedArchives = new Set<string>();
+  for (const runId of keptOutputs) {
+    const archive = await referencedArchive(join(outRoot, runId));
+    if (archive) protectedArchives.add(archive);
+  }
+
+  const archives = await runDirectories(rawRoot);
+  const excessArchives = archives
+    .slice(0, Math.max(0, archives.length - keep))
+    .filter((name) => name !== latest && !protectedArchives.has(name));
+  const excessOutputs = outputs.filter((name) => !keptOutputs.has(name));
+
+  const plan: ReadonlyArray<readonly [string, readonly string[]]> = [
+    [rawRoot, excessArchives],
+    [outRoot, excessOutputs],
+  ];
+  for (const [root, names] of plan) {
+    for (const name of names) {
       try {
         await rm(join(root, name), { recursive: true, force: true });
         removed.push(join(root, name));
@@ -116,6 +129,32 @@ export async function pruneRuns(dataDir: string, keep: number): Promise<string[]
     }
   }
   return removed;
+}
+
+async function runDirectories(root: string): Promise<string[]> {
+  try {
+    return (await readdir(root, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && RUN_DIR.test(e.name))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** The archive run id an output's run.json points at, or null. */
+async function referencedArchive(outputDirectory: string): Promise<string | null> {
+  try {
+    const record = z
+      .looseObject({ inputs: z.looseObject({ archiveDirectory: z.string() }).optional() })
+      .safeParse(JSON.parse(await readFile(join(outputDirectory, RUN_RECORD), "utf8")));
+    const directory = record.success ? record.data.inputs?.archiveDirectory : undefined;
+    if (!directory) return null;
+    const name = directory.split(/[\\/]/).filter(Boolean).pop() ?? null;
+    return name && RUN_DIR.test(name) ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 async function currentLatestRunId(dataDir: string): Promise<string | null> {
@@ -163,6 +202,8 @@ export interface RunRecordInput {
   readonly runId: string;
   readonly createdAt: string;
   readonly publishedAt: string;
+  /** When the upstream bytes were fetched; for a replay, the original archive's time. */
+  readonly sourceAcquiredAt: string;
   readonly source: "live" | "archive";
   readonly toolVersion: string;
   readonly rulesVersion: string;

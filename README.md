@@ -47,7 +47,8 @@ The `status` column is one of `matched`, `needs_review`, or `no_match`.
 | 6 | Already running | Wait for the other run to finish |
 | 7 | Disk | Output folder not writable or disk full |
 | 8 | Inputs look wrong | An export came back empty or collapsed versus last time; nothing was published |
-| 9 | Stale | From `pnpm cli status`: nothing published, or older than the limit |
+| 9 | Stale | From `pnpm cli status`: nothing published, or the result or its source data is older than the limit |
+| 10 | Tool defect | The result broke a hard rule; nothing was published. Contact engineering |
 
 A failed run never overwrites the previous good output.
 

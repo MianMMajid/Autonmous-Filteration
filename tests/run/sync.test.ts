@@ -267,6 +267,13 @@ describe("runSync end to end", () => {
     expect(status?.ageHours).toBeCloseTo(2, 5);
     expect(renderStatus(status, 1)).toMatch(/STALE/);
     expect(renderStatus(status, 3)).toMatch(/Fresh/);
+    expect(status?.sourceAcquiredAt).toBe("2026-10-08T11:00:00.000Z");
+    const replay = await run(upstreams(), "2026-10-08T14:00:00Z", true);
+    const replayed = await readPublishedStatus(dataDir, new Date("2026-10-08T14:00:00Z"));
+    expect(replay.runId).toBe(replayed?.runId);
+    expect(replayed?.ageHours).toBeCloseTo(0, 5);
+    expect(replayed?.sourceAgeHours).toBeCloseTo(3, 5);
+    expect(renderStatus(replayed, 24, 1)).toMatch(/STALE: source data fetched more than 1 h ago/);
   });
 
   it("refuses to run while another sync holds the lock, and leaves latest alone", async () => {

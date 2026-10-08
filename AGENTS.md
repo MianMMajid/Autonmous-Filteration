@@ -74,6 +74,10 @@ pnpm test
 - The lock is created with `link` and stale locks are claimed with `rename`,
   so recovery cannot delete a live owner's lock. Keep that protocol if you
   touch `src/run/lock.ts`.
+- `src/run/invariants.ts` is the publication boundary; every path that can
+  change a decision (matcher, assignment pass, overrides) is checked there.
+  Add new hard rules to it, not only to the path that first needs them.
+- `cli status` must never require credentials; it uses `loadLocalConfig`.
 - Ties in the matcher go to `needs_review`, never to a guess. See `docs/adr/0004`.
 - `docs/brief/` is gitignored because the original PDF contains live credentials.
 

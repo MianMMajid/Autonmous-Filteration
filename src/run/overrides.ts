@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parse as parseCsv } from "csv-parse/sync";
-import { acmeState, isInScope, StatusVerdict, statusVerdict } from "../domain/match/compat.ts";
+import {
+  acmeState,
+  isInScope,
+  StatusVerdict,
+  statusVerdict,
+  Temporal,
+  temporalVerdict,
+} from "../domain/match/compat.ts";
 import type { MatchDecision, MatchReport, OutputStatus } from "../domain/match/types.ts";
 import { ReasonCode } from "../domain/match/types.ts";
 import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
@@ -209,8 +216,86 @@ export function applyOverrides(
     applied++;
   }
 
+  // Human decisions are combined with automatic ones, so the shared-permit
+  // rule (one building, one year) must hold over the combined result.
+  const rejected = rejectConflictingOverrides(byAcme, report.decisions, acmeById, overridden);
+  for (const r of rejected) {
+    problems.push(
+      `override for ${r.acmeId} needs reconfirmation: ${r.reason}; the matcher's decision was kept`,
+    );
+    applied--;
+  }
+  const kept = overridden.filter((o) => !rejected.some((r) => r.acmeId === o.acmeId));
+
   const decisions = report.decisions.map((d) => byAcme.get(d.acmeId) ?? d);
-  return { report: withDecisions(report, decisions, pulley), applied, problems, overridden };
+  return { report: withDecisions(report, decisions, pulley), applied, problems, overridden: kept };
+}
+
+/**
+ * After overrides are applied, any Pulley project claimed by lines from
+ * different sites or program years is an invalid assignment. Overrides in
+ * such a group are withdrawn (the matcher's own decision is restored) until
+ * the assignment is consistent; automatic claims are never changed here
+ * because the matcher already resolved them.
+ */
+function rejectConflictingOverrides(
+  byAcme: Map<string, MatchDecision>,
+  original: readonly MatchDecision[],
+  acmeById: ReadonlyMap<string, AcmeProject>,
+  overridden: readonly OverriddenDecision[],
+): Array<{ acmeId: string; reason: string }> {
+  const rejected: Array<{ acmeId: string; reason: string }> = [];
+  const originalById = new Map(original.map((d) => [d.acmeId, d]));
+  const overriddenIds = new Set(overridden.map((o) => o.acmeId));
+  const keyOf = (acmeId: string): string => {
+    const a = acmeById.get(acmeId);
+    return `${a?.siteId}|${a?.programYear}`;
+  };
+  // Withdrawing an override restores a matcher decision that may itself join
+  // another group, so iterate to a fixed point (bounded; each pass withdraws
+  // at least one override or stops).
+  for (let pass = 0; pass < 10; pass++) {
+    const offending = conflictingOverrides(byAcme, keyOf, overriddenIds, rejected);
+    if (offending.length === 0) break;
+    for (const { decision, pulleyId, others } of offending) {
+      rejected.push({
+        acmeId: decision.acmeId,
+        reason: `${pulleyId} is also assigned to ${others}; one permit covers one building and one year`,
+      });
+      const restored = originalById.get(decision.acmeId);
+      if (restored) byAcme.set(decision.acmeId, restored);
+    }
+  }
+  return rejected;
+}
+
+/** Overrides sitting in a shared-permit group whose claims span more than one building or year. */
+function conflictingOverrides(
+  byAcme: ReadonlyMap<string, MatchDecision>,
+  keyOf: (acmeId: string) => string,
+  overriddenIds: ReadonlySet<string>,
+  alreadyRejected: ReadonlyArray<{ acmeId: string }>,
+): Array<{ decision: MatchDecision; pulleyId: string; others: string }> {
+  const groups = new Map<string, MatchDecision[]>();
+  for (const d of byAcme.values()) {
+    if (d.status !== "matched" || d.pulleyId === null) continue;
+    groups.set(d.pulleyId, [...(groups.get(d.pulleyId) ?? []), d]);
+  }
+  const out: Array<{ decision: MatchDecision; pulleyId: string; others: string }> = [];
+  for (const [pulleyId, group] of groups) {
+    if (new Set(group.map((d) => keyOf(d.acmeId))).size < 2) continue;
+    for (const decision of group) {
+      const isOverride = overriddenIds.has(decision.acmeId);
+      const done = alreadyRejected.some((r) => r.acmeId === decision.acmeId);
+      if (!isOverride || done) continue;
+      const others = group
+        .filter((o) => o !== decision)
+        .map((o) => `${o.acmeId} (${keyOf(o.acmeId).split("|")[1]})`)
+        .join(", ");
+      out.push({ decision, pulleyId, others });
+    }
+  }
+  return out;
 }
 
 /** Why a matched override's target cannot be applied, or null when it can. */
@@ -243,6 +328,9 @@ function reconfirmationNeeded(acme: AcmeProject, target: PulleyRecord): string |
     return target.banner !== acme.banner
       ? `${target.id} is ${target.organization}, the Acme site is ${acme.banner ?? "unknown banner"}`
       : `${target.id} is in ${target.state}, the Acme site is in ${state ?? "an unknown state"}`;
+  }
+  if (temporalVerdict(acme, target) === Temporal.Conflict) {
+    return `${target.id} belongs to another program year than ${acme.id} (${acme.programYear}); one permit covers one year`;
   }
   const verdict = statusVerdict(acme.status, target.status);
   if (verdict === StatusVerdict.Conflict) {

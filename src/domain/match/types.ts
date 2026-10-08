@@ -57,6 +57,8 @@ export const ReasonCode = {
   IdOutsideScope: "ID_OUTSIDE_SCOPE",
   /** A status value with no known lifecycle meaning on one side; the gate cannot be applied. */
   StatusUnknown: "STATUS_UNKNOWN",
+  /** The Acme project's own identity is in dispute (conflicting source rows); it would have matched but is held for review. */
+  IdentityDisputed: "IDENTITY_DISPUTED",
 } as const;
 export type ReasonCode = (typeof ReasonCode)[keyof typeof ReasonCode];
 
