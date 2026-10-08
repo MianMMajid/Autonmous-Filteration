@@ -16,6 +16,7 @@ import { acquireInputs } from "./acquire.ts";
 import { acquireLock } from "./lock.ts";
 import {
   loadPreviousRun,
+  pruneRuns,
   RUN_RECORD,
   renderRunRecord,
   updateLatest,
@@ -116,6 +117,9 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     });
     await updateLatest(config.dataDir, inputs.runId);
     log.info({ outputDirectory: written, changes: diff.counts }, "outputs written");
+
+    const pruned = await pruneRuns(config.dataDir, config.retainRuns);
+    if (pruned.length > 0) log.info({ removed: pruned.length }, "old runs pruned");
 
     return { runId: inputs.runId, outputDirectory: written, summary, report, diff };
   } finally {

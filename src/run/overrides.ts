@@ -154,6 +154,7 @@ export function applyOverrides(
       reason: ReasonCode.Override,
       tier: null,
       note: override.note ? `override: ${override.note}` : "override",
+      statusDrift: null,
     };
     byAcme.set(override.acmeId, replaced);
     applied++;
@@ -171,9 +172,11 @@ export function withDecisions(
 ): MatchReport {
   const counts = { matched: 0, needs_review: 0, no_match: 0 };
   const reasons: Record<string, number> = {};
+  let statusDrift = 0;
   for (const d of decisions) {
     counts[d.status]++;
     reasons[d.reason] = (reasons[d.reason] ?? 0) + 1;
+    if (d.statusDrift !== null) statusDrift++;
   }
   const claimed = new Set(
     decisions.map((d) => d.pulleyId).filter((id): id is string => id !== null),
@@ -182,7 +185,7 @@ export function withDecisions(
     .filter((p) => !p.isPathfinder && !p.isSignage && !claimed.has(p.id))
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((p) => ({ id: p.id, name: p.name, status: p.status }));
-  return { ...report, decisions, counts, reasons, unmatchedPulley };
+  return { ...report, decisions, counts, reasons, unmatchedPulley, statusDrift };
 }
 
 function isErrno(error: unknown, code: string): boolean {

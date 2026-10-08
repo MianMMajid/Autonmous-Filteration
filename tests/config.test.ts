@@ -14,8 +14,9 @@ describe("loadConfig", () => {
     expect(config.siteLedger.username).toBe("acme.ops");
     expect(config.siteLedger.baseUrl).toBe("https://pulley-siteledger.vercel.app");
     expect(config.pulley.apiKey).toBe("pk_test");
-    expect(config.logLevel).toBe("info");
+    expect(config.logLevel).toBe("warn");
     expect(config.dataDir).toBe("./data");
+    expect(config.retainRuns).toBe(60);
   });
 
   it("strips trailing slashes from base URLs", () => {
@@ -34,6 +35,12 @@ describe("loadConfig", () => {
       expect(configError.message).toContain("SITELEDGER_PASSWORD");
       expect(configError.message).toContain("PULLEY_API_KEY");
     }
+  });
+
+  it("parses RETAIN_RUNS and rejects nonsense", () => {
+    expect(loadConfig({ ...validEnv, RETAIN_RUNS: "10" }).retainRuns).toBe(10);
+    expect(() => loadConfig({ ...validEnv, RETAIN_RUNS: "0" })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...validEnv, RETAIN_RUNS: "many" })).toThrow(ConfigError);
   });
 
   it("rejects an invalid log level", () => {

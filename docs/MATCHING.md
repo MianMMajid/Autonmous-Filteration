@@ -47,9 +47,24 @@ same store and the same year.
 | 5 | Pulley name has no store or full id; a milestone date lands within 7 days of the Acme Key Date; same city; compatible type; and exactly one Acme project in the register fits it | `DATE_LOCALITY` |
 | 6 | Weak evidence only: same street name with a different house number, or same city plus compatible type | never matches; `WEAK_EVIDENCE` review |
 
-If tiers 1 to 5 yield nothing but store-identified projects exist in other
-years, the result is `no_match` with reason `UNRELATED_ONLY` and those
-projects listed, in preference to a tier 6 guess.
+If tiers 1 to 5 yield nothing, two checks run before tier 6. The exact Acme
+id on a project of the *other* banner or state is most likely a data-entry
+error in Pulley, so it becomes `needs_review` (`ID_OUTSIDE_SCOPE`) naming
+the project. Otherwise, if store-identified projects exist in other years,
+the result is `no_match` with reason `UNRELATED_ONLY` and those projects
+listed, in preference to a tier 6 guess.
+
+**Year-conflict pass.** After every project is decided, any Pulley project
+claimed by Acme lines from different program years (possible when the
+project has no dates to conflict with) keeps the claims with strong
+evidence, an exact id or dates within a week, and sends the others to
+`needs_review` (`YEAR_CONFLICT`). With no strong claim, the best-scored
+claim's year is kept. When both claims are strong, for example an exact id
+on one line and exact dates on another, both stay matched.
+
+**Shared street keys.** When two sites share a normalized street key, an
+address-tier match there also needs city agreement. Street name alone (the
+weak tier) likewise needs the city.
 
 Store numbers in Pulley names are extracted by `normalize/name.ts`. A 4-digit
 token preceded by a store marker (`#`, `Store`, `Club`, `AM-`, `Acme`, `|`)
@@ -112,6 +127,8 @@ dates.
 | Best candidate has incompatible type otherwise | `needs_review` (`TYPE_MISMATCH`) |
 | Best candidate fails the status gate | `needs_review` (`STATUS_CONFLICT`) |
 | Only store-identified projects in other years | `no_match` (`UNRELATED_ONLY`, other year) |
+| Exact id found only on the other banner or state | `needs_review` (`ID_OUTSIDE_SCOPE`) |
+| Same Pulley project claimed from another program year without strong evidence | `needs_review` (`YEAR_CONFLICT`) |
 | Only tier 6 evidence | `needs_review` (`WEAK_EVIDENCE`) |
 | Only pathfinder or signage projects reference the id or store | `no_match` (`EXCLUDED_ONLY`) |
 | Nothing at all | `no_match` (`NO_CANDIDATE`) |
@@ -127,7 +144,14 @@ Applied to the winning candidate of tiers 1 to 3.
 | Active or Deferred | Canceled | needs_review (`STATUS_CONFLICT`) |
 | Active or Deferred | anything else | matched |
 
-Brief: canceled only counts when canceled or closed on both sides.
+Brief: canceled only counts when canceled or closed on both sides. Spelling
+variants (Cancelled, Completed, Closed, Done) are accepted on both sides.
+
+**Status drift.** Differences the gate permits but the two systems may want
+to reconcile (Pulley Complete while Acme is Active or Deferred; Acme
+Deferred while Pulley is In Progress or Draft) are reported per matched row
+in `decisions.csv` (`status_drift`) and summarized, never used to change an
+outcome.
 
 ## Cardinality
 
@@ -162,9 +186,10 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 336 (tier 1: 97, tier 2: 201, tier 3: 16, tier 4: 14, tier 5: 8) |
-| needs_review | 12 |
-| no_match | 52 (23 no candidate, 24 other year or other line, 5 pathfinder only) |
+| matched | 334 (tier 1: 97, tier 2: 199, tier 3: 16, tier 4: 14, tier 5: 8) |
+| needs_review | 16 (4 ambiguous, 4 status conflict, 3 type mismatch, 2 year conflict, 2 id outside scope, 1 weak) |
+| no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
+| status differences on matched rows | 33 (reported, not an outcome) |
 
 See `docs/VALIDATION.md` for the hand check behind these numbers and the
 match-rate estimate. Counts come from `tests/domain/match/matcher.test.ts`

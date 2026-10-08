@@ -6,6 +6,14 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Edge-case and performance pass: year-conflict post-pass (`YEAR_CONFLICT`),
+  exact ids on the other banner or state surfaced as `ID_OUTSIDE_SCOPE`,
+  status drift reported per matched row and in the summary, banner fallback
+  from the canonical name when a site is missing, city agreement for shared
+  street keys, status spelling variants, run retention (`RETAIN_RUNS`),
+  memoized uniqueness checks (10x data: 2.1 s to 0.9 s), quieter default
+  logs, and a double-click `sync.command` launcher for macOS.
+
 - Phase 5 validation: hand check of a stratified sample (docs/VALIDATION.md)
   led to temporal evidence (date proximity to Key Dates, year verdicts),
   exclusion of other-year store candidates, a locality guard for store

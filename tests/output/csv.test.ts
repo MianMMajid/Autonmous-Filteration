@@ -21,6 +21,7 @@ function decision(
     tier: null,
     candidates: [],
     note: "",
+    statusDrift: null,
     ...partial,
   };
 }

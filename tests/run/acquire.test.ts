@@ -27,6 +27,7 @@ function config(): Config {
     pulley: { baseUrl: "https://p.test", apiKey: "k" },
     logLevel: "error",
     dataDir,
+    retainRuns: 60,
   };
 }
 
