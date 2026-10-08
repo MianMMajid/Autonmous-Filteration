@@ -75,8 +75,9 @@ Versions 1 and 2 remain readable for migration. Version 2 must contain its quali
 comparison fields; version 1 can derive its matched count from decisions. Legacy
 outputs lack the new artifact-integrity guarantee and cannot be exported by
 `published-path` or backed up until a supervised successful sync produces version 3.
-Matching rules are versioned separately; current rules 2026-10-08.10 add
-EV umbrella support and source-contradiction safeguards described in MATCHING.md. New review fingerprints are
+Matching rules are versioned separately; current rules 2026-10-08.12 support
+dedicated signage while retaining the EV umbrella and source-contradiction safeguards
+described in MATCHING.md. New review fingerprints are
 optional on historical records; their absence resurfaces pending cases once.
 
 Missing `latest.json` with existing completed outputs is an error, not a first run.

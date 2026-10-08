@@ -59,7 +59,7 @@ export function recommendedAction(d: MatchDecision): string {
   switch (d.reason) {
     case "EVIDENCE_CONFLICT":
       return d.reviewResolution === "human_confirmation"
-        ? "Verify the street or milestone discrepancy against permit evidence; correct the source or record an explained decision in overrides.csv with reviewer and date"
+        ? "Verify the scope, street, or milestone discrepancy against permit evidence; correct the source or record an explained decision in overrides.csv with reviewer and date"
         : "Verify the conflicting identity, year, or lifecycle evidence and correct the source before matching; an override cannot bypass this hard conflict";
     case "INSUFFICIENT_EVIDENCE":
       return "Confirm the permit's building and program year using independent evidence; correct the source or record a verified human decision in overrides.csv";

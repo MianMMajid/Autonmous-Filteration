@@ -113,13 +113,18 @@ export function acmeState(acme: AcmeProject): string | null {
   return acme.site?.state ?? acme.parsedName.canonical?.state ?? null;
 }
 
+/** Dedicated signage can only match dedicated signage, never an umbrella permit. */
+export function signageScopeCompatible(acme: AcmeProject, pulley: PulleyRecord): boolean {
+  return typesEqual(acme.projectType, "Signage") === typesEqual(pulley.projectType, "Signage");
+}
+
 /**
  * The one eligibility rule every path shares: forward candidate pools,
- * reverse uniqueness checks, and override validation. Pathfinder and
- * signage are excluded by the brief; banner and state must agree.
+ * reverse uniqueness checks, and override validation. Pathfinder is excluded;
+ * signage stays separate from general work, and banner and state must agree.
  */
 export function isInScope(acme: AcmeProject, pulley: PulleyRecord): boolean {
-  if (pulley.isPathfinder || pulley.isSignage) return false;
+  if (pulley.isPathfinder || !signageScopeCompatible(acme, pulley)) return false;
   // Two unknown banners are not evidence that the organizations agree.
   if (acme.banner === null || pulley.banner === null) return false;
   if (pulley.banner !== acme.banner) return false;

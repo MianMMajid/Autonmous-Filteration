@@ -42,7 +42,7 @@ export function createSafetyIndex(register: readonly AcmeProject[], pool: readon
     if (a.site?.streetKey) add(streets, key(a.site.streetKey), a);
     if (a.site) add(cities, key(labelKey(a.site.city)), a);
   }
-  for (const p of pool.filter((candidate) => !candidate.isPathfinder && !candidate.isSignage)) {
+  for (const p of pool.filter((candidate) => !candidate.isPathfinder)) {
     const key = (v: string | number) => scope(p.banner, p.state, v);
     for (const id of p.parsedName.fullIds) add(candidateIds, key(id), p);
     for (const store of p.parsedName.storeNumbers) add(candidateStores, key(store), p);

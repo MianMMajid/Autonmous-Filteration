@@ -2,7 +2,7 @@ import { type Config, isLiveConfig, type LocalConfig } from "../config.ts";
 import { matchProjects, RULES_VERSION } from "../domain/match/matcher.ts";
 import type { MatchReport } from "../domain/match/types.ts";
 import { normalizeInputs } from "../domain/normalize/build.ts";
-import { QualityError, toError } from "../errors.ts";
+import { QualityError, SchemaError, toError } from "../errors.ts";
 import type { Logger } from "../logger.ts";
 import {
   renderDecisionsCsv,
@@ -24,6 +24,7 @@ import {
   loadPreviousRun,
   pruneRuns,
   RUN_RECORD,
+  readRunRecord,
   renderRunRecord,
   updateLatest,
   writeOutputs,
@@ -88,6 +89,8 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
   const lock = await acquireLock(config.dataDir);
   try {
     const previous = await loadPreviousRun(config.dataDir);
+    const loadedOverrides = await loadOverrides(config.overridesFile);
+    await assertOverrideContinuity(config, previous?.runId, loadedOverrides.source.sha256);
     const implementation = await implementationSha256();
     const acquireOptions: AcquireOptions = {
       config,
@@ -122,7 +125,6 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
     const matched = matchProjects(normalized);
     log.info({ ...matched.counts, reasons: matched.reasons }, "matching complete");
 
-    const loadedOverrides = await loadOverrides(config.overridesFile);
     const overrides = applyOverrides(matched, loadedOverrides, normalized);
     for (const problem of overrides.problems) log.warn(problem);
     if (overrides.applied > 0) log.info({ applied: overrides.applied }, "overrides applied");
@@ -255,4 +257,23 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
 function sourceUrls(config: LocalConfig | Config): Record<string, string> {
   if (!isLiveConfig(config)) return { siteLedgerBaseUrl: "archive", pulleyBaseUrl: "archive" };
   return { siteLedgerBaseUrl: config.siteLedger.baseUrl, pulleyBaseUrl: config.pulley.baseUrl };
+}
+
+/** A disappearing input must not silently withdraw previously recorded human decisions. */
+async function assertOverrideContinuity(
+  config: LocalConfig,
+  previousRunId: string | undefined,
+  hash: string | null,
+): Promise<void> {
+  if (!previousRunId || hash !== null) return;
+  const prior = (await readRunRecord(config.dataDir, previousRunId))["overrides"];
+  if (
+    typeof prior === "object" &&
+    prior !== null &&
+    "sha256" in prior &&
+    typeof prior.sha256 === "string"
+  )
+    throw new SchemaError(
+      `Overrides file ${config.overridesFile} is missing after a published run recorded one; restore it or explicitly provide a valid empty overrides file`,
+    );
 }

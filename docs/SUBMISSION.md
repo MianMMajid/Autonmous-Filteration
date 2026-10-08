@@ -1,26 +1,28 @@
-# Submission notes — published rules 2026-10-08.9
+# Submission notes
 
-These notes accompany the exact published snapshot below. The subsequent .10
-fixes have an offline result of 324/26/50 ([review](REVIEW_ROUND_6.md)); they have
-not replaced this publication. For a .10 submission, run the updated CLI and
-use its generated `handoff.md` and mapping together. Do not reuse the .9 sample
-estimate as if independently validated on the changed decisions.
+## Current mapping and handoff
 
-## Mapping and reproducible handoff
+The latest verified publication is **2026-10-08T20-23-30-750Z**, rules .10,
+with **324 matched, 26 review, 50 no-match**. Source data was acquired at
+**2026-10-08T20:23:32.271Z**. Rules .12 replay the same mapping byte-for-byte
+([signage validation](SIGNAGE_VALIDATION.md)) in an isolated audit directory; the main
+publication pointer remains on .10. A fresh .11 audit fetch also confirmed the same
+records at 2026-10-08T20:44:55.343Z.
 
-Current fresh publication: **2026-10-08T20-01-47-980Z**, source acquired
-**2026-10-08T20:01:49.356Z**. Resolve and verify it with `pnpm cli published-path`.
-Submit that directory's `mapping.csv`, `review.csv`, and generated `handoff.md`,
-plus these notes and `docs/validation/2026-10-08-record-review.md`.
+Use `pnpm cli published-path` to resolve the currently verified publication,
+and submit its `mapping.csv`, `review.csv` and generated `handoff.md` together.
 The exact CSV header is `acme_pcroject_id,pulley_project_id,status`.
+Each new run generates a matching handoff; do not copy older counts into it.
+No Account Lead message has been sent.
 
-Each future sync generates its own handoff from the same report and provenance
-as its mapping. Do not reuse these snapshot counts for another publication.
-The generated file contains a draft message, not a sent communication.
+The notes below preserve the **historical .9 assessment**, publication
+`2026-10-08T20-01-47-980Z`. Its 50 sampled decisions remain unchanged in .10,
+but that is not independent validation of the newly accepted row or of rules .11.
+Use the source-record review as qualified background, not measured current accuracy.
 
-## Coverage and estimated correctness
+## Historical .9 coverage and estimated correctness
 
-The current snapshot has **323 matches, 27 review rows and 50 no-matches** out
+The .9 snapshot had **323 matches, 27 review rows and 50 no-matches** out
 of 400 rows: **80.75% automatic coverage**, with no applied human overrides.
 
 For the brief's requested estimate of the share we think is right, the
@@ -38,7 +40,7 @@ Earlier unsubstantiated precision claims remain withdrawn. Independent permit
 labels, separate from overrides and tuning data, are still needed to measure
 precision and false positives (`docs/adjudication/README.md`).
 
-## Draft message to the Account Lead — not sent
+## Historical .9 draft message — not sent; use the current generated handoff
 
 > Hi! I've built a CLI that downloads SiteLedger's three reports and the Pulley
 > projects, then creates the requested mapping CSV and a review list explaining

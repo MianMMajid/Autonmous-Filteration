@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REQUIRED_ENV_VARS } from "./config.ts";
+import { loadLocalConfig, REQUIRED_ENV_VARS } from "./config.ts";
 import { ExitCode } from "./errors.ts";
 
 interface Check {
@@ -92,15 +92,16 @@ if (skipEnv) {
 }
 
 // Data directory writable.
-const dataDir = resolve(repoRoot, process.env["DATA_DIR"] ?? "./data");
 let dataOk = true;
-let dataDetail = dataDir;
+let dataDetail = "";
 try {
-  mkdirSync(dataDir, { recursive: true });
+  const dataDir = loadLocalConfig().dataDir;
+  dataDetail = dataDir;
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   accessSync(dataDir, constants.W_OK);
 } catch (error) {
   dataOk = false;
-  dataDetail = `${dataDir} is not writable: ${error instanceof Error ? error.message : String(error)}`;
+  dataDetail = `Data configuration or directory check failed: ${error instanceof Error ? error.message : String(error)}`;
 }
 checks.push({ name: "data dir", ok: dataOk, detail: dataDetail, blocking: true });
 

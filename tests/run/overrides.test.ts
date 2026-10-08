@@ -51,8 +51,8 @@ bad-id,prj_a,matched,
     expect(() => parseOverrides("acme,pulley\n1,2\n")).toThrow(SchemaError);
   });
 
-  it("accepts an empty file", () => {
-    expect(parseOverrides("")).toEqual({ overrides: [], problems: [] });
+  it("requires a header even when no decisions exist", () => {
+    expect(() => parseOverrides("")).toThrow(SchemaError);
     expect(parseOverrides(HEADER)).toEqual({ overrides: [], problems: [] });
   });
 });
