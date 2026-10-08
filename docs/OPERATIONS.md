@@ -7,7 +7,7 @@ decisions so they stick.
 
 | Where | How |
 |---|---|
-| A laptop, by hand | `pnpm sync` in the repo folder. The summary prints at the end. |
+| A laptop, by hand | `pnpm sync` in the repo folder, or double-click `sync.command` (macOS), which runs it and opens the output folder. The summary prints at the end. |
 | A laptop, on a schedule (macOS) | `crontab -e`, then `0 8,12,16 * * 1-5 cd /path/to/repo && /usr/local/bin/pnpm sync --quiet >> sync.log 2>&1` |
 | GitHub Actions | `.github/workflows/sync.yml` runs three times on weekdays and on demand. Add the three secrets in the repository settings. Outputs are attached to each run as an artifact and cached so the next run can diff against them. |
 
@@ -35,6 +35,8 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `ADDRESS` | Exact street match |
 | `DATE_LOCALITY` | Milestone dates within a week, same city |
 | `AMBIGUOUS` | Two or more candidates tie; usually duplicate Pulley projects |
+| `YEAR_CONFLICT` | The same Pulley project is also claimed by a line from another program year |
+| `ID_OUTSIDE_SCOPE` | The Acme id is on a project filed under the other banner or state; likely a data-entry error in Pulley |
 | `TYPE_MISMATCH` | The only project at the store is a different kind of work |
 | `STATUS_CONFLICT` | Canceled or closed on one side only |
 | `WEAK_EVIDENCE` | Same street name or same city only |
@@ -42,6 +44,22 @@ Reason codes in `review.csv` and `decisions.csv`:
 | `EXCLUDED_ONLY` | Only a pathfinder or signage project references it |
 | `NO_CANDIDATE` | Nothing relates |
 | `OVERRIDE` | A human decision from `overrides.csv` |
+
+## Status differences
+
+A separate section of the summary lists matched rows where the two systems
+disagree in a way the brief permits, for example Pulley says Complete while
+Acme still says Active. These are not errors in the match; they are the
+things a sync between the systems exists to catch. The same text is in the
+`status_drift` column of `decisions.csv`.
+
+## Housekeeping
+
+Every run keeps its raw inputs and outputs. The newest 60 runs are kept and
+older ones removed automatically (`RETAIN_RUNS` in `.env` changes the
+number). The run `latest.json` points at is never removed.
+
+Logs are quiet by default; set `LOG_LEVEL=info` in `.env` to see each step.
 
 ## Recording decisions
 

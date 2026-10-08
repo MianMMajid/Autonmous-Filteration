@@ -6,6 +6,7 @@ import {
   dateProximityDays,
   isPulleyCanceled,
   sequenceRelation,
+  statusDrift,
   statusesAgree,
   storeContradicts,
   storeMatches,
@@ -56,9 +57,15 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
     excluded,
     acme: inputs.acme,
     sharedNumbers: numbersSharedByBuildings(inputs),
+    sharedStreets: streetsSharedBySites(inputs),
+    sequenceOwner: new Map(),
+    dateOwner: new Map(),
   };
 
-  const decisions = inputs.acme.map((acme) => decide(acme, context));
+  const decisions = resolveYearConflicts(
+    inputs.acme.map((acme) => decide(acme, context)),
+    inputs.acme,
+  );
 
   const matchedPulleyIds = new Set(
     decisions.filter((d) => d.pulleyId !== null).map((d) => d.pulleyId as string),
@@ -75,12 +82,86 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
 
   const counts = { matched: 0, needs_review: 0, no_match: 0 };
   const reasons: Record<string, number> = {};
+  let drift = 0;
   for (const decision of decisions) {
     counts[decision.status]++;
     reasons[decision.reason] = (reasons[decision.reason] ?? 0) + 1;
+    if (decision.statusDrift !== null) drift++;
   }
 
-  return { decisions, unmatchedPulley, pulleyIdsNotInRegister, counts, reasons };
+  return {
+    decisions,
+    unmatchedPulley,
+    pulleyIdsNotInRegister,
+    counts,
+    reasons,
+    statusDrift: drift,
+  };
+}
+
+/**
+ * Post-pass. The brief folds several Acme lines into one permit only for
+ * the same store and the same year. When one Pulley project ends up claimed
+ * by lines from different program years (possible when the project has no
+ * dates to conflict with), keep the claims with strong evidence (exact id,
+ * or dates within a week) and send the others to review. With no strong
+ * claim, the best-scored claim's year is kept.
+ */
+function resolveYearConflicts(
+  decisions: readonly MatchDecision[],
+  register: readonly AcmeProject[],
+): MatchDecision[] {
+  const yearOf = new Map(register.map((a) => [a.id, a.programYear]));
+  const claims = new Map<string, MatchDecision[]>();
+  for (const d of decisions) {
+    if (d.status !== OutputStatus.Matched || d.pulleyId === null) continue;
+    claims.set(d.pulleyId, [...(claims.get(d.pulleyId) ?? []), d]);
+  }
+  const demoted = new Map<string, MatchDecision>();
+  for (const [pulleyId, group] of claims) {
+    if (new Set(group.map((d) => yearOf.get(d.acmeId))).size < 2) continue;
+    const strong = group.filter(isStrongClaim);
+    const anchors =
+      strong.length > 0
+        ? strong
+        : [
+            [...group].sort(
+              (a, b) => (b.candidates[0]?.score ?? 0) - (a.candidates[0]?.score ?? 0),
+            )[0] as MatchDecision,
+          ];
+    const keepYears = new Set(anchors.map((d) => yearOf.get(d.acmeId)));
+    for (const d of group) {
+      if (keepYears.has(yearOf.get(d.acmeId))) continue;
+      const others = group
+        .filter((o) => o !== d)
+        .map((o) => `${o.acmeId} (${yearOf.get(o.acmeId)})`)
+        .join(", ");
+      demoted.set(d.acmeId, {
+        ...d,
+        status: OutputStatus.NeedsReview,
+        pulleyId: null,
+        reason: ReasonCode.YearConflict,
+        statusDrift: null,
+        note: `${pulleyId} is also claimed by ${others}; one permit covers one year`,
+      });
+    }
+  }
+  return decisions.map((d) => demoted.get(d.acmeId) ?? d);
+}
+
+function isStrongClaim(d: MatchDecision): boolean {
+  const e = d.candidates[0]?.evidence;
+  return d.tier === Tier.ExactId || (e?.proximityDays != null && e.proximityDays <= 7);
+}
+
+/** Street keys that belong to more than one site; an address match there needs city agreement. */
+function streetsSharedBySites(inputs: NormalizedInputs): Set<string> {
+  const seen = new Map<string, number>();
+  for (const site of inputs.sites) {
+    if (site.streetKey === null) continue;
+    seen.set(site.streetKey, (seen.get(site.streetKey) ?? 0) + 1);
+  }
+  return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([key]) => key));
 }
 
 /**
@@ -116,6 +197,24 @@ interface Context {
   readonly excluded: readonly PulleyRecord[];
   readonly acme: readonly AcmeProject[];
   readonly sharedNumbers: ReadonlySet<number>;
+  readonly sharedStreets: ReadonlySet<string>;
+  /** Memo: which Acme id (if exactly one) a store-less Pulley name identifies by sequence and city. */
+  readonly sequenceOwner: Map<string, string | null>;
+  /** Memo: which Acme id (if exactly one) a store-less Pulley name identifies by dates and city. */
+  readonly dateOwner: Map<string, string | null>;
+}
+
+/** The uniqueness checks depend only on the Pulley record and the register, so compute each once. */
+function memo(
+  cache: Map<string, string | null>,
+  pulley: PulleyRecord,
+  compute: () => string | null,
+): string | null {
+  const cached = cache.get(pulley.id);
+  if (cached !== undefined) return cached;
+  const value = compute();
+  cache.set(pulley.id, value);
+  return value;
 }
 
 // ---------- Per-project decision ----------
@@ -137,14 +236,19 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
         (p) =>
           isSequenceCandidate(acme, p) &&
           sameYear(p) &&
-          identifiedAcmeId(p, context.acme) === acme.id,
+          memo(context.sequenceOwner, p, () => identifiedAcmeId(p, context.acme)) === acme.id,
       ),
     ],
-    [Tier.Address, scoped.filter((p) => isAddressCandidate(acme, p) && sameYear(p))],
+    [
+      Tier.Address,
+      scoped.filter((p) => isAddressCandidate(acme, p, context.sharedStreets) && sameYear(p)),
+    ],
     [
       Tier.Dates,
       scoped.filter(
-        (p) => isDateCandidate(acme, p) && identifiedAcmeIdByDates(p, context.acme) === acme.id,
+        (p) =>
+          isDateCandidate(acme, p) &&
+          memo(context.dateOwner, p, () => identifiedAcmeIdByDates(p, context.acme)) === acme.id,
       ),
     ],
   ];
@@ -153,6 +257,24 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
     if (records.length === 0) continue;
     const candidates = rank(records.map((p) => toCandidate(acme, p, tier)));
     return strongDecision(acme, candidates, context);
+  }
+
+  // The exact id on a project of the other banner or state is most likely a
+  // data-entry error in Pulley; a human should see it rather than "no match".
+  const outside = context.pool.filter(
+    (p) => p.parsedName.fullIds.includes(acme.id) && !scoped.includes(p),
+  );
+  if (outside.length > 0) {
+    const where = outside
+      .map((p) => `${p.id} is ${p.banner ?? p.organization} in ${p.state}`)
+      .join("; ");
+    return review(
+      acme,
+      rank(outside.map((p) => toCandidate(acme, p, Tier.ExactId))),
+      Tier.ExactId,
+      ReasonCode.IdOutsideScope,
+      `${where}; Acme site is ${acme.banner ?? "unknown banner"} in ${state ?? "unknown state"}`,
+    );
   }
 
   if (storeAll.length > 0) {
@@ -252,21 +374,27 @@ function identifiedAcmeIdByDates(
   return found;
 }
 
-function isAddressCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
-  return (
-    pulley.parsedName.storeNumbers.length === 0 &&
-    sequenceRelation(acme, pulley) !== SequenceRelation.Different &&
-    pulley.streetKey !== null &&
-    pulley.streetKey === acme.site?.streetKey
-  );
+function isAddressCandidate(
+  acme: AcmeProject,
+  pulley: PulleyRecord,
+  sharedStreets: ReadonlySet<string>,
+): boolean {
+  if (pulley.parsedName.storeNumbers.length > 0) return false;
+  if (sequenceRelation(acme, pulley) === SequenceRelation.Different) return false;
+  if (pulley.streetKey === null || pulley.streetKey !== acme.site?.streetKey) return false;
+  // Two sites on the same street key (possible across cities): need the city too.
+  return !sharedStreets.has(pulley.streetKey) || cityMatches(acme, pulley);
 }
 
 function isWeakCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
   if (storeContradicts(acme, pulley)) return false;
   if (pulley.parsedName.fullIds.length > 0) return false;
   if (sequenceRelation(acme, pulley) === SequenceRelation.Different) return false;
+  // Street name without the house number only means something in the same city.
   const sameStreetName =
-    pulley.streetNameKey !== null && pulley.streetNameKey === acme.site?.streetNameKey;
+    pulley.streetNameKey !== null &&
+    pulley.streetNameKey === acme.site?.streetNameKey &&
+    cityMatches(acme, pulley);
   const sameLocality =
     cityMatches(acme, pulley) && typesCompatible(acme.projectType, pulley.projectType);
   return sameStreetName || sameLocality;
@@ -379,6 +507,7 @@ function strongDecision(
     pulleyId: winner.pulleyId,
     reason: reasonForTier(tier),
     note: describeWinner(winner),
+    statusDrift: statusDrift(acme.status, winner.pulleyStatus),
   };
 }
 
@@ -504,7 +633,14 @@ function base(
   tier: Tier | null,
 ): Pick<
   MatchDecision,
-  "acmeId" | "acmeName" | "acmeStatus" | "acmeType" | "programYear" | "candidates" | "tier"
+  | "acmeId"
+  | "acmeName"
+  | "acmeStatus"
+  | "acmeType"
+  | "programYear"
+  | "candidates"
+  | "tier"
+  | "statusDrift"
 > {
   return {
     acmeId: acme.id,
@@ -514,6 +650,7 @@ function base(
     programYear: acme.programYear,
     candidates: candidates.slice(0, 5),
     tier,
+    statusDrift: null,
   };
 }
 

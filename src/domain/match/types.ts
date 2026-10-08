@@ -51,6 +51,10 @@ export const ReasonCode = {
   ExcludedOnly: "EXCLUDED_ONLY",
   /** A human decision recorded in overrides.csv replaced the matcher's decision. */
   Override: "OVERRIDE",
+  /** The same Pulley project is claimed by Acme lines from different program years; one permit covers one year. */
+  YearConflict: "YEAR_CONFLICT",
+  /** The Acme id appears verbatim on a Pulley project filed under the other banner or state: likely a data-entry error. */
+  IdOutsideScope: "ID_OUTSIDE_SCOPE",
 } as const;
 export type ReasonCode = (typeof ReasonCode)[keyof typeof ReasonCode];
 
@@ -118,6 +122,8 @@ export interface MatchDecision {
   readonly candidates: readonly Candidate[];
   /** One-line human explanation for the review file. */
   readonly note: string;
+  /** For matched rows, a status difference worth syncing (e.g. Pulley Complete while Acme is Active); null otherwise. */
+  readonly statusDrift: string | null;
 }
 
 export interface MatchReport {
@@ -135,4 +141,6 @@ export interface MatchReport {
   }[];
   readonly counts: Readonly<Record<OutputStatus, number>>;
   readonly reasons: Readonly<Record<string, number>>;
+  /** Number of matched rows with a status difference worth syncing. */
+  readonly statusDrift: number;
 }

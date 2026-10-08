@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dateProximityDays,
   sequenceRelation,
+  statusDrift,
   statusesAgree,
   storeContradicts,
   storeMatches,
@@ -98,6 +99,21 @@ describe("dateProximityDays and temporalVerdict", () => {
     expect(
       temporalVerdict(acme({ programYear: 2027 }), pulley({ constructionStart: "2029-09-12" })),
     ).toBe(Temporal.Conflict);
+  });
+});
+
+describe("statusDrift and status synonyms", () => {
+  it("reports permitted differences worth syncing", () => {
+    expect(statusDrift("Active", "Complete")).toBe("Pulley Complete, Acme Active");
+    expect(statusDrift("Active", "Completed")).toBe("Pulley Completed, Acme Active");
+    expect(statusDrift("Deferred", "In Progress")).toBe("Acme Deferred, Pulley In Progress");
+    expect(statusDrift("Active", "In Progress")).toBeNull();
+    expect(statusDrift("Closed", "Complete")).toBeNull();
+  });
+  it("accepts spelling variants on both sides", () => {
+    expect(statusesAgree("Completed", "Closed")).toBe(true);
+    expect(statusesAgree("Active", "Cancelled")).toBe(false);
+    expect(statusesAgree("Closed", "Done")).toBe(true);
   });
 });
 

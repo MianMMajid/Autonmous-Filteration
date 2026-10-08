@@ -14,7 +14,7 @@ lines them up by hand every Monday. One command, run as often as you like.
 4. Run `npm i -g pnpm@10`, then `pnpm install`, then `pnpm preflight`.
    Every line should say `ok`.
 
-**Each run:**
+**Each run:** double-click `sync.command` (macOS), or in a terminal:
 
 ```sh
 pnpm sync
@@ -29,7 +29,7 @@ Outputs land in `data/out/latest/` (every run also keeps its own
 | `review.csv` | Only the `needs_review` rows, with the reason, a note, and the top candidates |
 | `decisions.csv` | Every row with its evidence, for audit |
 | `pulley-unmatched.csv` | Pulley projects nobody claimed |
-| `summary.txt` | Counts, what changed since the previous run, the review list |
+| `summary.txt` | Counts, what changed since the previous run, the review list, status differences |
 | `run.json` | Machine-readable record used for the next run's diff |
 
 The summary is also printed to the terminal at the end of each run.

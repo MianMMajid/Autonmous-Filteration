@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createRunId, loadLatestArchive, RawArchive } from "../../src/run/archive.ts";
+import { pruneRuns, updateLatest, writeOutputs } from "../../src/run/outputs.ts";
 
 let dataDir: string;
 
@@ -11,6 +12,38 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await rm(dataDir, { recursive: true, force: true });
+});
+
+describe("pruneRuns", () => {
+  it("keeps the newest N runs in raw and out, never the latest, and ignores other folders", async () => {
+    const ids = [
+      "2026-10-01T00-00-00Z",
+      "2026-10-02T00-00-00Z",
+      "2026-10-03T00-00-00Z",
+      "2026-10-04T00-00-00Z",
+    ];
+    for (const id of ids) {
+      const a = new RawArchive(dataDir, id);
+      await a.init();
+      await a.finalize();
+      await writeOutputs(dataDir, id, { "mapping.csv": "x" });
+    }
+    await updateLatest(dataDir, "2026-10-02T00-00-00Z"); // pretend an older run is the latest good one
+    await mkdir(join(dataDir, "out", "keep-me"), { recursive: true });
+    const removed = await pruneRuns(dataDir, 2);
+    expect(removed.map((p) => p.split("/").slice(-2).join("/"))).toEqual([
+      "raw/2026-10-01T00-00-00Z",
+      "out/2026-10-01T00-00-00Z",
+    ]);
+    expect((await readdir(join(dataDir, "out"))).sort()).toEqual([
+      "2026-10-02T00-00-00Z",
+      "2026-10-03T00-00-00Z",
+      "2026-10-04T00-00-00Z",
+      "keep-me",
+      "latest",
+      "latest.json",
+    ]);
+  });
 });
 
 describe("createRunId", () => {

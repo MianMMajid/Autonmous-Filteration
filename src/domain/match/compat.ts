@@ -162,9 +162,16 @@ export function temporalVerdict(acme: AcmeProject, pulley: PulleyRecord): Tempor
 
 // ---------- Status gate ----------
 
-const ACME_CLOSED: ReadonlySet<string> = new Set(["closed"]);
-const PULLEY_ENDED: ReadonlySet<string> = new Set(["canceled", "cancelled", "complete"]);
-const PULLEY_CANCELED: ReadonlySet<string> = new Set(["canceled", "cancelled"]);
+const ACME_CLOSED: ReadonlySet<string> = new Set([
+  "closed",
+  "complete",
+  "completed",
+  "canceled",
+  "cancelled",
+]);
+const PULLEY_CANCELED: ReadonlySet<string> = new Set(["canceled", "cancelled", "cancelation"]);
+const PULLEY_COMPLETE: ReadonlySet<string> = new Set(["complete", "completed", "closed", "done"]);
+const PULLEY_ENDED: ReadonlySet<string> = new Set([...PULLEY_CANCELED, ...PULLEY_COMPLETE]);
 
 export function isAcmeClosed(status: string): boolean {
   return ACME_CLOSED.has(typeKey(status));
@@ -184,4 +191,21 @@ export function statusesAgree(acmeStatus: string, pulleyStatus: string): boolean
   const pulleyCanceled = isPulleyCanceled(pulleyStatus);
   if (acmeClosed) return pulleyEnded;
   return !pulleyCanceled;
+}
+
+/**
+ * A status difference on a matched pair that the two systems may want to
+ * reconcile. The gate above already rejects cancellation on one side only;
+ * this reports the remaining, permitted differences.
+ */
+export function statusDrift(acmeStatus: string, pulleyStatus: string): string | null {
+  const acme = typeKey(acmeStatus);
+  const pulley = typeKey(pulleyStatus);
+  if (!isAcmeClosed(acmeStatus) && PULLEY_COMPLETE.has(pulley)) {
+    return `Pulley ${pulleyStatus}, Acme ${acmeStatus}`;
+  }
+  if (acme === "deferred" && (pulley === "in progress" || pulley === "draft")) {
+    return `Acme ${acmeStatus}, Pulley ${pulleyStatus}`;
+  }
+  return null;
 }

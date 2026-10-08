@@ -26,6 +26,7 @@ export function renderSummary(s: SummaryInput): string {
     headerSection(s),
     changesSection(s.diff),
     reviewSection(s.report),
+    statusDriftSection(s.report),
     overridesSection(s.overrides),
     warningsSection(s),
     pulleySideSection(s.report),
@@ -93,6 +94,20 @@ function reviewSection(report: MatchReport): string[] {
   }
   if (review.length > MAX_LISTED)
     lines.push(`  ... ${review.length - MAX_LISTED} more in review.csv`);
+  return lines;
+}
+
+function statusDriftSection(report: MatchReport): string[] {
+  const rows = report.decisions.filter((d) => d.statusDrift !== null);
+  if (rows.length === 0) return [];
+  const lines = [
+    `Status differences on matched rows (${rows.length}), worth syncing between the systems:`,
+  ];
+  for (const d of rows.slice(0, MAX_LISTED)) {
+    lines.push(`  ${d.acmeId} -> ${d.pulleyId}  ${d.statusDrift}`);
+  }
+  if (rows.length > MAX_LISTED)
+    lines.push(`  ... ${rows.length - MAX_LISTED} more in decisions.csv (status_drift column)`);
   return lines;
 }
 

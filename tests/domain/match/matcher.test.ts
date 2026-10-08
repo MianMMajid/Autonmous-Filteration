@@ -47,16 +47,24 @@ describe("matchProjects: tier 1, exact id", () => {
     expect(d.note).toMatch(/prj_s \(signage\)/);
   });
 
-  it("requires the same banner: club 1556 is not store 1556", () => {
+  it("never matches across banners: club 1556 is not store 1556, but a human should see it", () => {
     const d = one({ banner: Banner.Market }, [
       pulley({ name: "ACME WC | 1556.1002 RENO, NV", banner: Banner.WarehouseClub }),
     ]);
-    expect(d.status).toBe("no_match");
+    expect(d).toMatchObject({
+      status: "needs_review",
+      reason: ReasonCode.IdOutsideScope,
+      pulleyId: null,
+    });
   });
 
-  it("requires the same state", () => {
+  it("never matches across states, but a human should see it", () => {
     const d = one({ state: "NV" }, [pulley({ name: "Acme | 1556.1002 RENO, NV", state: "TX" })]);
-    expect(d.status).toBe("no_match");
+    expect(d).toMatchObject({
+      status: "needs_review",
+      reason: ReasonCode.IdOutsideScope,
+      pulleyId: null,
+    });
   });
 
   it("prefers the live project over a canceled duplicate, even when the canceled one has more dates", () => {
@@ -420,6 +428,97 @@ describe("matchProjects: tier 5, dates plus locality", () => {
       ),
     );
     for (const d of report.decisions) expect(d.status).not.toBe("matched");
+  });
+});
+
+describe("matchProjects: year conflicts across claims", () => {
+  it("keeps the strong claim and sends the other year's claim to review", () => {
+    const store = pulley({
+      id: "prj_store",
+      name: "Acme | 1556.1004 RENO, NV",
+      projectType: "Remodel",
+    });
+    const report = matchProjects(
+      inputs(
+        [
+          acme({ sequence: 1004, programYear: 2027, projectType: "Remodel" }),
+          acme({ sequence: 1005, programYear: 2028, projectType: "Remodel" }),
+        ],
+        [store],
+      ),
+    );
+    expect(report.decisions.map((d) => [d.acmeId, d.status, d.reason])).toEqual([
+      ["1556.1004", "matched", ReasonCode.ExactId],
+      ["1556.1005", "needs_review", ReasonCode.YearConflict],
+    ]);
+    expect(report.decisions[1]?.note).toMatch(/also claimed by 1556.1004 \(2027\)/);
+  });
+
+  it("allows several lines from the same year to share one permit", () => {
+    const store = pulley({ id: "prj_store", name: "#1556 Reno, NV", projectType: "Remodel" });
+    const report = matchProjects(
+      inputs(
+        [
+          acme({ sequence: 1004, programYear: 2027, projectType: "Remodel" }),
+          acme({ sequence: 1005, programYear: 2027, projectType: "Coffee Tenant" }),
+        ],
+        [store],
+      ),
+    );
+    expect(report.decisions.every((d) => d.status === "matched")).toBe(true);
+  });
+});
+
+describe("matchProjects: exact id outside the banner or state", () => {
+  it("sends a likely data-entry error to review instead of no_match", () => {
+    const d = one({ banner: Banner.Market }, [
+      pulley({ id: "prj_wc", name: "1556.1002 - Reno, NV", banner: Banner.WarehouseClub }),
+    ]);
+    expect(d).toMatchObject({
+      status: "needs_review",
+      reason: ReasonCode.IdOutsideScope,
+      pulleyId: null,
+    });
+    expect(d.note).toMatch(/prj_wc is Acme Warehouse Club in NV; Acme site is Acme Market in NV/);
+  });
+});
+
+describe("matchProjects: status drift and shared streets", () => {
+  it("reports Pulley Complete against Acme Active on a matched row", () => {
+    const d = one({ status: "Active" }, [
+      pulley({ name: "1556.1002 - Reno, NV", status: "Complete" }),
+    ]);
+    expect(d.status).toBe("matched");
+    expect(d.statusDrift).toBe("Pulley Complete, Acme Active");
+    const report = matchProjects(
+      inputs(
+        [acme({ status: "Active" })],
+        [pulley({ name: "1556.1002 - Reno, NV", status: "Complete" })],
+      ),
+    );
+    expect(report.statusDrift).toBe(1);
+  });
+
+  it("needs the city when two sites share a street key", () => {
+    const reno = acme({ store: 1111, sequence: 1001, city: "Reno", street: "100 Main St" });
+    const vegas = acme({ store: 2222, sequence: 1001, city: "Las Vegas", street: "100 Main St" });
+    const report = matchProjects(
+      inputs(
+        [reno, vegas],
+        [
+          pulley({
+            id: "prj_lv",
+            name: "Acme Market – Las Vegas, NV",
+            jurisdictionCity: "Las Vegas",
+            street: "100 Main St",
+          }),
+        ],
+      ),
+    );
+    expect(report.decisions.map((d) => [d.acmeId, d.status, d.pulleyId])).toEqual([
+      ["1111.1001", "no_match", null],
+      ["2222.1001", "matched", "prj_lv"],
+    ]);
   });
 });
 

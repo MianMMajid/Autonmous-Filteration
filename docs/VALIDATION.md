@@ -101,6 +101,31 @@ The remaining uncertainty sits in tier 2 folds where Pulley has one permit
 and Acme has several lines in the same year, and in the 23 `no_match` rows
 with no candidate at all, which may be projects Pulley has not opened yet.
 
+## Second pass: edge cases and performance (same day)
+
+A follow-up review of the real data and a scaled copy found and fixed:
+
+- Three Pulley projects claimed by Acme lines from different program years
+  (stores 5967, 6409, 4413). A post-pass now demotes claims that lack strong
+  evidence to `needs_review` (`YEAR_CONFLICT`). Two were demoted; store 6409
+  has an exact id on one line and exact dates on the other, so both stay.
+- Two exact ids found only on projects of the other banner (2898.1001,
+  5287.1003), previously silent `no_match`, now `needs_review`
+  (`ID_OUTSIDE_SCOPE`).
+- 33 matched rows with a permitted status difference (Pulley Complete while
+  Acme Active, or Acme Deferred while Pulley In Progress) are now listed in
+  the summary and `decisions.csv`.
+- Quiet failure modes with no instance in today's data: a project whose
+  site is missing now takes its banner from the canonical name; an address
+  match on a street key shared by two sites now needs the city; status
+  spelling variants are accepted; old runs are pruned.
+- Matching at ten times today's volume dropped from 2.1 s to 0.9 s by
+  computing the register-wide uniqueness checks once per Pulley project.
+
+Results after the second pass: 334 matched, 16 needs_review, 50 no_match.
+The estimate below is unchanged; the two rows that left `matched` were the
+demoted year conflicts.
+
 ## How to repeat this
 
 ```sh

@@ -8,6 +8,7 @@ import type {
 import {
   type AcmeProject,
   type AcmeSite,
+  bannerFromCode,
   bannerFromLabel,
   type NormalizedInputs,
   type PulleyRecord,
@@ -97,17 +98,23 @@ function buildAcmeProjects(
     const dates = datesById.get(row.projectId) ?? null;
     if (!dates) missingDates++;
 
+    const parsedName = parseProjectName(row.projectName);
+    // Without a site row the banner still comes from the canonical name's code.
+    const banner =
+      site?.banner ??
+      (parsedName.canonical ? bannerFromCode(parsedName.canonical.bannerCode) : null);
+
     projects.push({
       id: row.projectId,
       store,
       sequence,
       siteId: row.siteId,
       name: row.projectName,
-      parsedName: parseProjectName(row.projectName),
+      parsedName,
       programYear: row.programYear,
       projectType: row.projectType,
       status: row.status,
-      banner: site?.banner ?? null,
+      banner,
       site,
       dates: dates
         ? {
@@ -121,19 +128,34 @@ function buildAcmeProjects(
     });
   }
 
-  if (duplicates > 0)
-    warnings.push(`Project Register: ${duplicates} duplicate project id(s) ignored`);
-  if (missingSite > 0)
-    warnings.push(
-      `Project Register: ${missingSite} project(s) reference a site missing from the Site Directory`,
-    );
-  if (storeMismatch > 0)
-    warnings.push(
-      `Project Register: ${storeMismatch} project(s) whose store number matches neither the site's current nor former location number`,
-    );
-  if (missingDates > 0)
-    warnings.push(`Key Dates: ${missingDates} project(s) have no Key Dates row`);
+  warnings.push(...joinWarnings({ duplicates, missingSite, storeMismatch, missingDates }));
   return projects;
+}
+
+function joinWarnings(counts: {
+  duplicates: number;
+  missingSite: number;
+  storeMismatch: number;
+  missingDates: number;
+}): string[] {
+  const out: string[] = [];
+  if (counts.duplicates > 0) {
+    out.push(`Project Register: ${counts.duplicates} duplicate project id(s) ignored`);
+  }
+  if (counts.missingSite > 0) {
+    out.push(
+      `Project Register: ${counts.missingSite} project(s) reference a site missing from the Site Directory`,
+    );
+  }
+  if (counts.storeMismatch > 0) {
+    out.push(
+      `Project Register: ${counts.storeMismatch} project(s) whose store number matches neither the site's current nor former location number`,
+    );
+  }
+  if (counts.missingDates > 0) {
+    out.push(`Key Dates: ${counts.missingDates} project(s) have no Key Dates row`);
+  }
+  return out;
 }
 
 // ---------- Pulley ----------

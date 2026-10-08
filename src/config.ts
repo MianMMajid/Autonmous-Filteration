@@ -26,8 +26,9 @@ const envSchema = z.object({
   SITELEDGER_PASSWORD: required("SITELEDGER_PASSWORD"),
   PULLEY_BASE_URL: z.url().default(DEFAULT_BASE_URL),
   PULLEY_API_KEY: required("PULLEY_API_KEY"),
-  LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
+  LOG_LEVEL: z.enum(LOG_LEVELS).default("warn"),
   DATA_DIR: z.string().trim().min(1).default("./data"),
+  RETAIN_RUNS: z.coerce.number().int().min(1).default(60),
 });
 
 export interface Config {
@@ -42,6 +43,8 @@ export interface Config {
   };
   readonly logLevel: LogLevel;
   readonly dataDir: string;
+  /** How many past runs to keep under data/raw and data/out. */
+  readonly retainRuns: number;
 }
 
 /** Names of the variables an operator must supply. Used by `preflight`. */
@@ -81,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     logLevel: parsed.LOG_LEVEL,
     dataDir: parsed.DATA_DIR,
+    retainRuns: parsed.RETAIN_RUNS,
   };
 }
 

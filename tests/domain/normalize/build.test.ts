@@ -66,6 +66,17 @@ describe("normalizeInputs on the real dataset", () => {
     expect(normalized.pulley.filter((p) => p.streetKey !== null)).toHaveLength(299);
   });
 
+  it("falls back to the banner code in the canonical name when the site is missing", () => {
+    const inputs = loadInputs();
+    const orphan = { ...inputs.acme.projects[0], projectId: "9999.1000", siteId: "ST-0" };
+    const result = normalizeInputs({
+      acme: { ...inputs.acme, projects: [orphan] },
+      pulley: [],
+    } as Parameters<typeof normalizeInputs>[0]);
+    expect(result.acme[0]?.site).toBeNull();
+    expect(result.acme[0]?.banner).toBe(Banner.WarehouseClub); // name ends in -WHC-RM-2027
+  });
+
   it("warns on join problems instead of failing", () => {
     const inputs = loadInputs();
     const broken = {

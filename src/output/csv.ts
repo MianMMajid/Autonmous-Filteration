@@ -36,6 +36,7 @@ const DECISION_COLUMNS = [
   "reason",
   "tier",
   "note",
+  "status_drift",
   ...Array.from({ length: CANDIDATE_SLOTS }, (_, i) => i + 1).flatMap((n) => [
     `candidate_${n}_id`,
     `candidate_${n}_name`,
@@ -57,6 +58,7 @@ function decisionRow(d: MatchDecision): Record<string, string | number> {
     reason: d.reason,
     tier: d.tier ?? "",
     note: d.note,
+    status_drift: d.statusDrift ?? "",
   };
   for (let i = 0; i < CANDIDATE_SLOTS; i++) {
     const c = d.candidates[i];

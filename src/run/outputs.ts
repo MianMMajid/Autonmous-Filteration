@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { MatchDecision } from "../domain/match/types.ts";
@@ -65,6 +65,53 @@ export async function updateLatest(dataDir: string, runId: string): Promise<void
     await rename(tmpLink, link);
   } catch {
     await rm(tmpLink, { force: true }).catch(() => undefined);
+  }
+}
+
+// ---------- Retention ----------
+
+const RUN_DIR = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
+
+/**
+ * Keep the newest `keep` run directories under data/raw and data/out and
+ * remove the rest. The run `latest.json` points at is never removed.
+ * Returns the removed directory names.
+ */
+export async function pruneRuns(dataDir: string, keep: number): Promise<string[]> {
+  const removed: string[] = [];
+  const latest = await currentLatestRunId(dataDir);
+  for (const root of [join(dataDir, "raw"), join(dataDir, OUT_DIRNAME)]) {
+    let entries: string[];
+    try {
+      entries = (await readdir(root, { withFileTypes: true }))
+        .filter((e) => e.isDirectory() && RUN_DIR.test(e.name))
+        .map((e) => e.name)
+        .sort();
+    } catch {
+      continue;
+    }
+    const excess = entries.slice(0, Math.max(0, entries.length - keep));
+    for (const name of excess) {
+      if (name === latest) continue;
+      try {
+        await rm(join(root, name), { recursive: true, force: true });
+        removed.push(join(root, name));
+      } catch (error) {
+        throw new IoError(`Could not remove old run ${join(root, name)}`, { cause: error });
+      }
+    }
+  }
+  return removed;
+}
+
+async function currentLatestRunId(dataDir: string): Promise<string | null> {
+  try {
+    const pointer = latestPointerSchema.safeParse(
+      JSON.parse(await readFile(join(dataDir, OUT_DIRNAME, LATEST_POINTER), "utf8")),
+    );
+    return pointer.success ? pointer.data.runId : null;
+  } catch {
+    return null;
   }
 }
 
