@@ -207,6 +207,7 @@ export interface RunRecordInput {
   readonly source: "live" | "archive";
   readonly toolVersion: string;
   readonly rulesVersion: string;
+  readonly implementationSha256: string;
   readonly inputs: {
     readonly archiveDirectory: string;
     readonly files: readonly unknown[];

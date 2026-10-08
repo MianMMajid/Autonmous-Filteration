@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { link, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { IoError, LockedError } from "../errors.ts";
 
@@ -15,9 +15,10 @@ import { IoError, LockedError } from "../errors.ts";
  *   second exclusive file, the reclaim mutex. Only its holder may remove a
  *   lock, and it re-reads and re-checks liveness *while holding the mutex*,
  *   so a live owner that acquired after a contender's first read is seen
- *   and never displaced. The mutex is held for microseconds; a mutex left by
- *   a reclaimer that died is itself reclaimed after a generous age.
- * - Release: remove the lock only if it still records our pid.
+ *   and never displaced. Recovery mutexes never expire: a paused owner may
+ *   resume. An abandoned mutex requires offline operator cleanup.
+ * - Release: remove the lock only if it still records our pid and token;
+ *   repeated release calls share the same promise and cannot remove a successor.
  *
  * Any removal of the lock path outside the owner's own release happens only
  * under the reclaim mutex, which is what makes the dead-owner check and the
@@ -27,8 +28,6 @@ import { IoError, LockedError } from "../errors.ts";
 export const LOCK_FILENAME = ".lock";
 const RECLAIM_FILENAME = ".lock.reclaim";
 const MAX_ATTEMPTS = 8;
-/** A reclaim mutex older than this belongs to a reclaimer that died mid-step. */
-const RECLAIM_MUTEX_STALE_MS = 60_000;
 
 interface LockContent {
   readonly pid: number;
@@ -61,7 +60,8 @@ export async function acquireLock(dataDir: string, options: LockOptions = {}): P
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const content: LockContent = { pid, startedAt: new Date().toISOString(), token: newToken() };
     if (await createExclusive(path, content)) {
-      return { path, release: () => releaseLock(path, pid) };
+      let release: Promise<void> | undefined;
+      return { path, release: () => (release ??= releaseLock(path, content)) };
     }
     const existing = await readRecord(path);
     if (existing === "missing") continue; // released between our steps; retry
@@ -90,9 +90,9 @@ async function reclaimDeadOwner(
     const current = await readRecord(path);
     if (current === "missing") return;
     if (current !== "corrupt" && isAlive(current.pid)) throw locked(path, current);
-    await rm(path, { force: true });
+    await removeLockFile(path);
   } finally {
-    await rm(mutex, { force: true }).catch(() => undefined);
+    await removeLockFile(mutex);
   }
 }
 
@@ -107,16 +107,14 @@ async function acquireReclaimMutex(
       token: newToken(),
     };
     if (await createExclusive(mutexPath, content)) return mutexPath;
-    // Someone else is reclaiming. Wait briefly; if their mutex is ancient, they died holding it.
-    try {
-      const age = Date.now() - (await stat(mutexPath)).mtimeMs;
-      if (age > RECLAIM_MUTEX_STALE_MS) await rm(mutexPath, { force: true });
-    } catch {
-      // vanished; loop
-    }
+    // Never steal a recovery mutex, even if its owner appears dead. Without
+    // an OS compare-and-delete primitive, recursive stale recovery races too.
     await sleep(5 + Math.floor(Math.random() * 10));
   }
-  throw new IoError(`Could not reclaim the lock: ${mutexPath} stays busy`);
+  throw new LockedError(
+    `Recovery mutex ${mutexPath} stays busy. Stop all sync processes and verify none can resume before removing this file; then retry. Age alone does not prove it is abandoned.`,
+    { details: { path: mutexPath } },
+  );
 }
 
 /** Atomically create `path` with its content in place. False if it already exists. */
@@ -131,7 +129,10 @@ async function createExclusive(path: string, content: LockContent): Promise<bool
     } catch (error) {
       if (isErrno(error, "EEXIST")) return false;
       if (isErrno(error, "EPERM") || isErrno(error, "ENOSYS") || isErrno(error, "EXDEV")) {
-        return exclusiveWrite(path, payload); // filesystems without hard links
+        throw new IoError(
+          `Filesystem does not support atomic hard-link locking at ${path}; use a local filesystem with hard-link support`,
+          { cause: error },
+        );
       }
       throw new IoError(`Could not create ${path}`, { cause: error });
     } finally {
@@ -143,21 +144,22 @@ async function createExclusive(path: string, content: LockContent): Promise<bool
   }
 }
 
-async function exclusiveWrite(path: string, payload: string): Promise<boolean> {
-  try {
-    await writeFile(path, payload, { flag: "wx" });
-    return true;
-  } catch (error) {
-    if (isErrno(error, "EEXIST")) return false;
-    throw new IoError(`Could not create ${path}`, { cause: error });
-  }
+async function releaseLock(path: string, owner: LockContent): Promise<void> {
+  const existing = await readRecord(path);
+  if (existing === "missing" || existing === "corrupt") return;
+  if (existing.pid !== owner.pid || existing.token !== owner.token) return;
+  await removeLockFile(path);
 }
 
-async function releaseLock(path: string, pid: number): Promise<void> {
-  const existing = await readRecord(path);
-  if (existing === "missing") return;
-  if (existing !== "corrupt" && existing.pid !== pid) return; // not ours any more
-  await rm(path, { force: true });
+async function removeLockFile(path: string): Promise<void> {
+  try {
+    await rm(path, { force: true });
+  } catch (error) {
+    throw new IoError(
+      `Could not remove lock file ${path}; verify ownership before manual recovery`,
+      { cause: error },
+    );
+  }
 }
 
 async function readRecord(path: string): Promise<LockContent | "missing" | "corrupt"> {
@@ -165,11 +167,19 @@ async function readRecord(path: string): Promise<LockContent | "missing" | "corr
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    return isErrno(error, "ENOENT") ? "missing" : "corrupt";
+    if (isErrno(error, "ENOENT")) return "missing";
+    throw new IoError(`Could not read lock file ${path}`, { cause: error });
   }
   try {
     const parsed: unknown = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && "pid" in parsed && typeof parsed.pid === "number") {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "pid" in parsed &&
+      typeof parsed.pid === "number" &&
+      Number.isSafeInteger(parsed.pid) &&
+      parsed.pid > 0
+    ) {
       const startedAt =
         "startedAt" in parsed && typeof parsed.startedAt === "string"
           ? parsed.startedAt
@@ -203,7 +213,8 @@ function processIsAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return isErrno(error, "EPERM"); // exists but owned by someone else
+    if (isErrno(error, "ESRCH")) return false;
+    return true; // EPERM or an unexpected liveness failure cannot prove death
   }
 }
 

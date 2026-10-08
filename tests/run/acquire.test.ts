@@ -87,12 +87,12 @@ describe("acquireInputs", () => {
 
     const archived = (await readdir(inputs.archiveDirectory)).sort();
     expect(archived).toEqual([
-      "Dates.csv",
-      "Register.xls",
-      "Sites.xlsx",
+      "key-dates.csv",
       "manifest.json",
+      "project-register.xls",
       "pulley-projects.page-001.json",
       "pulley-projects.page-002.json",
+      "site-directory.xlsx",
     ]);
   });
 

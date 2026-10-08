@@ -95,16 +95,26 @@ async function fetchLive(options: AcquireOptions): Promise<AcquiredInputs> {
 
   await Promise.all([
     archive.write(
-      reports["project-register"].filename,
+      "project-register.xls",
       "project-register",
       reports["project-register"].bytes,
+      undefined,
+      reports["project-register"].filename,
     ),
     archive.write(
-      reports["site-directory"].filename,
+      "site-directory.xlsx",
       "site-directory",
       reports["site-directory"].bytes,
+      undefined,
+      reports["site-directory"].filename,
     ),
-    archive.write(reports["key-dates"].filename, "key-dates", reports["key-dates"].bytes),
+    archive.write(
+      "key-dates.csv",
+      "key-dates",
+      reports["key-dates"].bytes,
+      undefined,
+      reports["key-dates"].filename,
+    ),
     ...pulleyResult.pages.map((page, index) =>
       archive.write(
         `pulley-projects.page-${String(index + 1).padStart(3, "0")}.json`,
@@ -176,7 +186,15 @@ async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
   const decoder = new TextDecoder("utf-8");
   const pulley: PulleyProject[] = [];
   for (const [index, bytes] of pages.entries()) {
-    const result = pulleyPageSchema.safeParse(JSON.parse(decoder.decode(bytes)));
+    let json: unknown;
+    try {
+      json = JSON.parse(decoder.decode(bytes));
+    } catch (error) {
+      throw new SchemaError(`Archived Pulley page ${index + 1} is not valid JSON`, {
+        cause: error,
+      });
+    }
+    const result = pulleyPageSchema.safeParse(json);
     if (!result.success) {
       throw new SchemaError(`Archived Pulley page ${index + 1} did not match the expected shape`, {
         details: { issues: result.error.issues.slice(0, 10).map((issue) => issue.message) },

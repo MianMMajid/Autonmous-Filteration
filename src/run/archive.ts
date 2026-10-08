@@ -21,6 +21,7 @@ export type ArchiveFileKind = (typeof ARCHIVE_FILE_KINDS)[number];
 
 const manifestFileSchema = z.object({
   name: z.string().min(1),
+  originalName: z.string().optional(),
   kind: z.enum(ARCHIVE_FILE_KINDS),
   bytes: z.number().int().nonnegative(),
   /** Page order for pulley-page files; absent otherwise. */
@@ -58,6 +59,7 @@ export class RawArchive {
   readonly #files: ArchiveManifestFile[] = [];
 
   constructor(dataDir: string, runId: string) {
+    if (!RUN_ID_PATTERN.test(runId)) throw new SchemaError(`Invalid archive run id: ${runId}`);
     this.runId = runId;
     this.directory = join(dataDir, "raw", runId);
   }
@@ -84,11 +86,14 @@ export class RawArchive {
     kind: ArchiveFileKind,
     content: Uint8Array | string,
     page?: number,
+    originalName?: string,
   ): Promise<string> {
-    const safeName = name.replace(/[\\/]/g, "_");
+    if (!safeArchiveName(name))
+      throw new SchemaError(`Unsafe or reserved archive filename: ${name}`);
+    const safeName = name;
     const path = join(this.directory, safeName);
     try {
-      await writeFile(path, content);
+      await writeFile(path, content, { flag: "wx" });
     } catch (error) {
       throw new IoError(`Could not write ${path}`, { cause: error });
     }
@@ -96,8 +101,21 @@ export class RawArchive {
     const sha256 = sha256Hex(content);
     this.#files.push(
       page === undefined
-        ? { name: safeName, kind, bytes, sha256 }
-        : { name: safeName, kind, bytes, page, sha256 },
+        ? {
+            name: safeName,
+            kind,
+            bytes,
+            sha256,
+            ...(originalName === undefined ? {} : { originalName }),
+          }
+        : {
+            name: safeName,
+            kind,
+            bytes,
+            page,
+            sha256,
+            ...(originalName === undefined ? {} : { originalName }),
+          },
     );
     return path;
   }
@@ -107,11 +125,11 @@ export class RawArchive {
       version: 1,
       runId: this.runId,
       createdAt: createdAt.toISOString(),
-      files: [...this.#files],
+      files: [...this.#files].sort((a, b) => a.name.localeCompare(b.name)),
     };
     const path = join(this.directory, MANIFEST_FILENAME);
     try {
-      await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
+      await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
     } catch (error) {
       throw new IoError(`Could not write ${path}`, { cause: error });
     }
@@ -135,12 +153,13 @@ export async function loadLatestArchive(dataDir: string): Promise<LoadedArchive 
   let entries: string[];
   try {
     entries = (await readdir(rawDir, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && RUN_ID_PATTERN.test(entry.name))
       .map((entry) => entry.name)
       .sort()
       .reverse();
-  } catch {
-    return null;
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw new IoError(`Could not list archive directory ${rawDir}`, { cause: error });
   }
   for (const runId of entries) {
     const archive = await loadArchive(dataDir, runId);
@@ -155,23 +174,43 @@ export async function loadLatestArchive(dataDir: string): Promise<LoadedArchive 
  * damaged archive is reported rather than silently replayed.
  */
 export async function loadArchive(dataDir: string, runId: string): Promise<LoadedArchive | null> {
+  if (!RUN_ID_PATTERN.test(runId)) throw new SchemaError(`Invalid archive run id: ${runId}`);
   const directory = join(dataDir, "raw", runId);
   let text: string;
   try {
     text = await readFile(join(directory, MANIFEST_FILENAME), "utf8");
-  } catch {
-    return null;
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw new IoError(`Could not read archive manifest in ${directory}`, { cause: error });
   }
-  const parsed = manifestSchema.safeParse(JSON.parse(text));
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new SchemaError(`Archive ${directory} has malformed manifest JSON`, { cause: error });
+  }
+  const parsed = manifestSchema.safeParse(json);
   if (!parsed.success) {
     throw new SchemaError(`Archive ${directory} has an invalid manifest`, {
       details: { issues: parsed.error.issues.map((issue) => issue.message) },
     });
   }
+  const names = parsed.data.files.map((file) => file.name);
+  if (
+    parsed.data.runId !== runId ||
+    names.some((name) => !safeArchiveName(name)) ||
+    new Set(names).size !== names.length
+  ) {
+    throw new SchemaError(
+      `Archive ${directory} has mismatched identity, unsafe paths, or duplicate filenames`,
+    );
+  }
   return {
     directory,
     manifest: parsed.data,
     read: async (file) => {
+      if (!safeArchiveName(file.name))
+        throw new SchemaError(`Unsafe archive filename: ${file.name}`);
       let bytes: Uint8Array;
       try {
         bytes = new Uint8Array(await readFile(join(directory, file.name)));
@@ -183,7 +222,23 @@ export async function loadArchive(dataDir: string, runId: string): Promise<Loade
           `Archived file ${file.name} in ${runId} does not match its recorded hash; the archive was altered`,
         );
       }
+      if (bytes.byteLength !== file.bytes)
+        throw new SchemaError(`Archived file ${file.name} has an unexpected byte length`);
       return bytes;
     },
   };
+}
+
+function safeArchiveName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    name !== "." &&
+    name !== ".." &&
+    !/[\\/\0]/.test(name) &&
+    name.toLowerCase() !== MANIFEST_FILENAME
+  );
+}
+
+function isMissing(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

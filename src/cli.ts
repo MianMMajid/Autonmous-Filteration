@@ -20,13 +20,14 @@ import { ExitCode, StaleError, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
 import { readPublishedStatus, renderStatus } from "./run/status.ts";
 import { runSync } from "./run/sync.ts";
+import { TOOL_VERSION } from "./version.ts";
 
 const program = new Command();
 
 program
   .name("siteledger-sync")
   .description("Match Acme SiteLedger projects to Pulley projects and write a mapping CSV.")
-  .version("0.1.0");
+  .version(TOOL_VERSION);
 
 program
   .command("sync")

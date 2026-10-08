@@ -34,22 +34,33 @@ export interface PulleyFetchResult {
 }
 
 /**
- * Keep the first occurrence of each project id. Shared by the live client and
- * the archive replay so both produce the same candidate set from the same pages.
+ * Collapse identical repeats only. Conflicting versions mean the snapshot is
+ * inconsistent: refuse it rather than let page order decide identity or status.
+ * Shared by live acquisition and replay.
  */
 export function dedupeProjects(projects: readonly PulleyProject[]): {
   readonly projects: PulleyProject[];
   readonly duplicates: number;
 } {
-  const seen = new Set<string>();
+  const seen = new Map<string, PulleyProject>();
   const unique: PulleyProject[] = [];
   let duplicates = 0;
   for (const project of projects) {
-    if (seen.has(project.id)) {
+    const first = seen.get(project.id);
+    if (first) {
+      const fields = (Object.keys(first) as Array<keyof PulleyProject>)
+        .filter((key) => first[key] !== project[key])
+        .sort();
+      if (fields.length > 0) {
+        throw new SchemaError(
+          `Pulley project ${project.id} has conflicting duplicate records (${fields.join(", ")}); retry acquisition or correct the source before publishing`,
+          { details: { projectId: project.id, conflictingFields: fields } },
+        );
+      }
       duplicates++;
       continue;
     }
-    seen.add(project.id);
+    seen.set(project.id, project);
     unique.push(project);
   }
   return { projects: unique, duplicates };

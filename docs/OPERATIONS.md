@@ -49,12 +49,17 @@ that nobody has refreshed, which only `status` reveals.
   never removes the archive a retained output was computed from.
 - **Concurrency.** The lock is created atomically; a dead owner's lock is
   removed only under a second exclusive file, the reclaim mutex, after
-  re-checking liveness while holding it, so recovery can never displace a
-  live owner.
+  re-checking liveness while holding it. The mutex never expires. If recovery
+  crashes, subsequent reclaim attempts exit 6 with the mutex path. Stop every
+  sync process, disable the scheduler, and verify no suspended process can
+  resume before removing `data/.lock.reclaim`; then retry and re-enable the
+  scheduler. Do not remove a mutex solely because it is old. Hard-link support
+  on a local filesystem is required; distributed/shared-host locking is not supported.
 - **Reproduce a past decision.** `pnpm sync --replay <runId> --quiet` reruns
   today's rules on that run's archived bytes; the archive verifies every
   file against its recorded hash. To see what the rules were at the time,
-  read `run.json`: it records the rules version, tool version, input hashes,
+  read `run.json`: it records the rules version, tool version, implementation
+  SHA-256 (source, package metadata, dependency lockfile), input hashes,
   configuration, the overrides file hash, and the matcher's decision for
   every row a human decision replaced.
 - **Drill.** Once, before relying on the tool: delete `data/out/latest.json`
@@ -62,6 +67,26 @@ that nobody has refreshed, which only `status` reveals.
   `mapping.csv` is byte-identical to the archived one.
 
 ## Reading the result
+
+Conflicting Pulley records for one ID refuse the snapshot with exit 5;
+identical repeats still collapse. Retry acquisition, then correct the source
+if the conflict persists. A contradictory site/store join, register duplicate,
+or Key Dates duplicate is held in `review.csv` as `IDENTITY_DISPUTED`.
+Matched overrides on disputed rows are rejected for reconfirmation.
+
+HTTP redirects are refused with exit 5; correct the configured endpoint rather
+than forwarding credentials. Server `Retry-After` is honored within a five-minute
+cumulative wait budget per request. A cooldown beyond the remaining budget
+exits 4 with a retry-later message, without sending premature retries.
+Cancellation interrupts network attempts and default retry waits.
+
+Archive files use internal report/page names; original download names are
+metadata only. Duplicate/reserved internal paths cannot overwrite inputs.
+Malformed manifests, unsafe paths, hash/length changes, and inconsistent
+archive identities produce typed errors instead of silently replaying them.
+Lock-cleanup failures are warnings so they cannot mask a primary failure or
+turn a completed publication into a misleading failure; inspect the lock
+before running again.
 
 Start with `summary.txt` (also printed to the terminal). It leads with the
 counts, then what changed since the previous run, then the review list.

@@ -172,9 +172,7 @@ function buildAcmeProjects(
     if (!dates && !quarantined.quarantinedDates.has(row.projectId)) missingDates++;
 
     const parsedName = parseProjectName(row.projectName);
-    const siteDisputed = quarantined.quarantinedSites.has(row.siteId)
-      ? `Site ${row.siteId} appears in the Site Directory with conflicting content`
-      : null;
+    const siteDisputed = siteDispute(siteIssue, row.siteId, store);
     // Without a site row the banner still comes from the canonical name's code.
     const banner =
       site?.banner ??
@@ -191,8 +189,8 @@ function buildAcmeProjects(
       projectType: row.projectType,
       status: row.status,
       banner,
-      site,
-      identityDisputed: siteDisputed,
+      site: siteIssue === "mismatch" ? null : site,
+      identityDisputed: siteDisputed ?? dateDispute(quarantined.quarantinedDates, row.projectId),
       dates: dates
         ? {
             designStart: dates.designStart,
@@ -306,4 +304,16 @@ function toPulleyRecord(project: PulleyProject): PulleyRecord {
     constructionStart: project.constructionStart,
     createdAt: project.createdAt,
   };
+}
+
+function siteDispute(issue: SiteJoinIssue, siteId: string, store: number): string | null {
+  if (issue === "quarantined")
+    return `Site ${siteId} appears in the Site Directory with conflicting content`;
+  if (issue === "mismatch")
+    return `Project store ${store} matches neither the current nor former number of site ${siteId}`;
+  return null;
+}
+
+function dateDispute(quarantined: ReadonlySet<string>, projectId: string): string | null {
+  return quarantined.has(projectId) ? `Key Dates has conflicting rows for ${projectId}` : null;
 }

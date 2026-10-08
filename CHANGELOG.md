@@ -4,6 +4,21 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed — 0.1.1, rules 2026-10-08.5
+
+- Round-three findings: disputed joins and duplicate source evidence remain
+  in review; conflicting Pulley versions refuse the snapshot; stale overrides
+  are rejected and conflict withdrawal converges for arbitrary batch sizes.
+- Recovery mutexes never expire; release is token-checked and idempotent.
+  Unsupported locking filesystems fail closed with a clear error.
+- Authenticated redirects are refused. Retry-After is honored within a bounded
+  wait budget, and cancellation stops retries.
+- Collision-free internal archive filenames preserve upstream names as metadata.
+  Duplicate writes, unsafe paths, damaged manifests, and size/hash mismatches
+  fail explicitly. Cleanup errors preserve primary failures and published state.
+- Run provenance includes an implementation content hash; CLI and run records
+  share the package version. Regression coverage: tests/audit-round-3.test.ts.
+
 ### Added
 
 - Round-two audit response: anchors must agree (`YEAR_CONFLICT` otherwise),

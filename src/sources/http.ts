@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { AuthError, NetworkError, SchemaError, type SyncError } from "../errors.ts";
 import type { Logger } from "../logger.ts";
 
@@ -10,11 +11,12 @@ import type { Logger } from "../logger.ts";
  *
  * Policy:
  * - 2xx: returned to the caller with the body already read.
+ * - 3xx: refused without following the redirect or forwarding credentials.
  * - 401 / 403: `AuthError` immediately. Retrying bad credentials is pointless.
  * - 404: `SchemaError`. The endpoint we rely on has moved; that is a contract change.
  * - 408 / 425 / 429 / 5xx and thrown network errors (including timeouts and
  *   body-read failures): retried with exponential backoff and jitter,
- *   honoring `Retry-After`, then `NetworkError`.
+ *   honoring `Retry-After` within a cumulative waiting budget, then `NetworkError`.
  * - Any other status: `NetworkError` without retry.
  *
  * Error messages include the upstream JSON `message` when one is present, so
@@ -31,6 +33,8 @@ export interface HttpClientOptions {
   readonly timeoutMs?: number;
   readonly baseDelayMs?: number;
   readonly maxDelayMs?: number;
+  /** Total retry waiting budget per request. Longer server cooldowns fail explicitly. */
+  readonly maxRetryWaitMs?: number;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly log?: Logger;
 }
@@ -62,7 +66,8 @@ export class HttpClient {
   readonly #timeoutMs: number;
   readonly #baseDelayMs: number;
   readonly #maxDelayMs: number;
-  readonly #sleep: (ms: number) => Promise<void>;
+  readonly #maxRetryWaitMs: number;
+  readonly #sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   readonly #log: Logger | undefined;
 
   constructor(options: HttpClientOptions = {}) {
@@ -71,17 +76,39 @@ export class HttpClient {
     this.#timeoutMs = options.timeoutMs ?? 30_000;
     this.#baseDelayMs = options.baseDelayMs ?? 500;
     this.#maxDelayMs = options.maxDelayMs ?? 10_000;
+    this.#maxRetryWaitMs = options.maxRetryWaitMs ?? 300_000;
     this.#sleep = options.sleep ?? defaultSleep;
     this.#log = options.log;
+    for (const [name, value] of Object.entries({
+      retries: this.#retries,
+      timeoutMs: this.#timeoutMs,
+      baseDelayMs: this.#baseDelayMs,
+      maxDelayMs: this.#maxDelayMs,
+      maxRetryWaitMs: this.#maxRetryWaitMs,
+    })) {
+      if (
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        (name === "timeoutMs" && value === 0) ||
+        (name !== "retries" && value > 2_147_483_647)
+      ) {
+        throw new RangeError(
+          `${name} must be a ${name === "timeoutMs" ? "positive" : "nonnegative"} safe integer within the supported timer range`,
+        );
+      }
+    }
   }
 
   async request(url: string, init: RequestInit, context: RequestContext): Promise<HttpResult> {
     const details = { system: context.system, url: redactQuery(url) };
+    let remainingWait = this.#maxRetryWaitMs;
     for (let attempt = 0; ; attempt++) {
+      checkCanceled(init.signal, context);
       const isLastAttempt = attempt >= this.#retries;
       const outcome = await this.#attempt(url, init);
 
       if (outcome.kind === "failure") {
+        checkCanceled(init.signal, context);
         const failure = describeFailure(outcome.error);
         if (isLastAttempt) {
           throw new NetworkError(
@@ -89,18 +116,33 @@ export class HttpClient {
             { cause: outcome.error, details },
           );
         }
-        await this.#backoff(attempt, undefined, context, failure);
+        remainingWait -= await this.#backoff(
+          attempt,
+          undefined,
+          context,
+          failure,
+          remainingWait,
+          init.signal ?? undefined,
+        );
         continue;
       }
 
       const { result } = outcome;
+      if (result.status >= 300 && result.status < 400) {
+        throw new SchemaError(
+          `${context.what}: HTTP ${result.status} redirect refused; verify the configured endpoint`,
+          { details: { ...details, status: result.status } },
+        );
+      }
       if (result.ok) return result;
       if (RETRYABLE_STATUSES.has(result.status) && !isLastAttempt) {
-        await this.#backoff(
+        remainingWait -= await this.#backoff(
           attempt,
           retryAfterMs(result.headers),
           context,
           `HTTP ${result.status}`,
+          remainingWait,
+          init.signal ?? undefined,
         );
         continue;
       }
@@ -113,9 +155,14 @@ export class HttpClient {
     try {
       const response = await this.#fetch(url, {
         ...init,
-        signal: AbortSignal.timeout(this.#timeoutMs),
+        redirect: "manual",
+        signal: init.signal
+          ? AbortSignal.any([init.signal, AbortSignal.timeout(this.#timeoutMs)])
+          : AbortSignal.timeout(this.#timeoutMs),
       });
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const isRedirect = response.status >= 300 && response.status < 400;
+      if (isRedirect) await response.body?.cancel().catch(() => undefined);
+      const bytes = isRedirect ? new Uint8Array() : new Uint8Array(await response.arrayBuffer());
       const result: HttpResult = {
         ok: response.ok,
         status: response.status,
@@ -134,15 +181,33 @@ export class HttpClient {
     retryAfter: number | undefined,
     context: RequestContext,
     reason: string,
-  ): Promise<void> {
+    remainingWait: number,
+    signal?: AbortSignal,
+  ): Promise<number> {
     const exponential = Math.min(this.#maxDelayMs, this.#baseDelayMs * 2 ** attempt);
     const jittered = exponential * (0.5 + Math.random() * 0.5);
-    const delay = Math.min(this.#maxDelayMs, retryAfter ?? jittered);
+    const delay = retryAfter ?? jittered;
+    if (delay > remainingWait) {
+      throw new NetworkError(
+        `${context.what}: retry delay ${delay} ms exceeds remaining wait budget ${remainingWait} ms; retry later`,
+        {
+          details: { retryAfterMs: delay, remainingWaitMs: remainingWait },
+        },
+      );
+    }
     this.#log?.warn(
       { system: context.system, attempt: attempt + 1, delayMs: Math.round(delay), reason },
       `${context.what}: retrying`,
     );
-    await this.#sleep(delay);
+    try {
+      await this.#sleep(delay, signal);
+    } catch (error) {
+      throw new NetworkError(
+        `${context.what}: retry wait ${signal?.aborted ? "canceled" : "failed"}`,
+        { cause: error },
+      );
+    }
+    return delay;
   }
 }
 
@@ -178,8 +243,8 @@ function statusError(
   });
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  await delay(ms, undefined, signal ? { signal } : {});
 }
 
 function describeFailure(error: unknown): string {
@@ -190,8 +255,8 @@ function describeFailure(error: unknown): string {
 function retryAfterMs(headers: Headers): number | undefined {
   const header = headers.get("retry-after");
   if (!header) return undefined;
-  const seconds = Number(header);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  if (/^\d+(?:\.\d+)?$/.test(header.trim())) return Number(header) * 1000;
+  if (!/[A-Za-z]/.test(header)) return undefined;
   const at = Date.parse(header);
   if (Number.isFinite(at)) return Math.max(0, at - Date.now());
   return undefined;
@@ -220,4 +285,8 @@ function upstreamMessage(raw: string): string | undefined {
 function redactQuery(url: string): string {
   const index = url.indexOf("?");
   return index === -1 ? url : `${url.slice(0, index)}?[redacted]`;
+}
+
+function checkCanceled(signal: AbortSignal | null | undefined, context: RequestContext): void {
+  if (signal?.aborted) throw new NetworkError(`${context.what}: request canceled`);
 }
