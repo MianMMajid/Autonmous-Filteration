@@ -9,10 +9,10 @@ The CSV uses exactly `acme_pcroject_id,pulley_project_id,status`.
 
 ## 2a. Match coverage and correctness
 
-Rules 2026-10-08.6 produce **309 matches, 41 review rows, and 50 no-matches**
-on the 400-row 2026-10-08 archive. Automatic coverage is **77.25%**. Twenty-three
-previously accepted rows now require verification because evidence conflicts
-or does not establish the permit's year.
+Rules 2026-10-08.8 produce **324 matches, 26 review rows, and 50 no-matches**
+on the 400-row 2026-10-08 archive. Automatic coverage is **81%**. The narrowed temporal rule accepts a unique store candidate for a single Acme
+project without requiring an invented year suffix. Conflicts and ambiguity still
+require review.
 
 **Correctness has not been independently measured.** Earlier estimates of
 96% precision, 81% correctly matched projects, and 94% correct outcomes were
@@ -28,8 +28,8 @@ is implied by the automated tests.
 > the reports and Pulley projects, archives the inputs, and writes the mapping
 > CSV plus explanations and candidates for rows needing review.
 >
-> On the archived October 8 dataset, the current rules accept 309 of 400 rows,
-> hold 41 for review, and return no match for 50. These are coverage counts;
+> On the archived October 8 dataset, the current rules accept 324 of 400 rows,
+> hold 26 for review, and return no match for 50. These are coverage counts;
 > we still need independent checks to establish correctness. The matcher now
 > holds conflicting IDs, years, dates, addresses, and lifecycle evidence for
 > review rather than treating a high score as sufficient proof.
@@ -37,12 +37,13 @@ is implied by the automated tests.
 > Pathfinder and signage are excluded. Market and Warehouse Club identities
 > stay separate, cancellation must agree, and shared permits cannot span
 > buildings or program years. Verified human decisions can supply missing
-> evidence; conflicting source facts must be corrected before a match is
-> accepted. Overrides are checked again on each run.
+> evidence and resolve street or milestone discrepancies with an explanatory
+> note. Hard identity conflicts require correction. Overrides are checked again
+> on each run.
 >
 > Scheduling, verified outputs, backups, and monitoring support are included;
 > live scheduled operation still requires deployment setup and verification.
-> The 41-row initial review backlog should be resolved before agreeing on an
+> The 26-row initial review backlog should be resolved before agreeing on an
 > acceptable ongoing weekly review workload.
 >
 > Could we schedule 30 minutes to review the disputed cases, run the tool on

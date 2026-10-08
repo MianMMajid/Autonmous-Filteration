@@ -52,6 +52,7 @@ const rates = (counts: EvaluationCounts) => ({
 /** Independent labels are read-only and never become overrides. No labels means no accuracy claim. */
 export async function evaluateRun(dataDir: string, runId: string, labelsPath: string) {
   const record = await readRunRecord(dataDir, runId);
+  if (record.decisions.length === 0) throw new SchemaError("Cannot evaluate an empty run");
   const bytes = await readRegularFile(labelsPath, 8 * 1024 * 1024);
   const raw = parseLabels(bytes);
   const inputs = record.inputs as typeof record.inputs & { archiveDirectory?: unknown };

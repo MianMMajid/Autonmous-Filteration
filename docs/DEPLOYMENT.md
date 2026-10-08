@@ -63,7 +63,9 @@ Version 3 run records require output integrity verification. Their manifest hash
 all emitted output files, including `run.json`, `overrides.snapshot.csv`, and
 the additive `review-changes.csv`. Older version 3 publications without the
 review delta remain readable. Status,
-subsequent sync, backups, and artifact selection reject damaged version 3 outputs.
+subsequent sync and backups reject damaged version 3 outputs. Customer reports
+remain on the trusted host and approved backup volume; this workflow does not
+upload output CSVs or run records to GitHub artifacts.
 Hashes detect corruption; they do not authenticate files against an attacker who
 can rewrite both files and manifests. Access control and a trusted backup store
 remain necessary. File writes are flushed before publication; storage durability
@@ -82,6 +84,36 @@ Never delete history to bypass the quality gate. Restore a known snapshot into a
 new directory, validate it, then explicitly switch DATA_DIR. A truly empty output
 history remains the supported supervised bootstrap path. Existing but corrupted
 baseline state cannot be waived using `--accept-input-change`.
+
+## First-run crash recovery
+
+A crash before the first `latest.json` publication can leave a partial or complete
+run directory without any snapshot to restore. The CLI deliberately fails closed:
+an absent pointer alone cannot distinguish an interrupted bootstrap from lost
+published history. Its error points here instead of requiring a nonexistent backup.
+
+1. Stop the scheduler and all sync processes, and verify none can resume. Check
+   operator/run records to establish that this deployment **never published a
+   successful result**. If a publication ever existed, use restoration below.
+2. Preserve the entire failed DATA_DIR unchanged for investigation. Do not delete
+   or reuse run directories, remove recovery locks, or manually select an orphan
+   as the publication.
+3. Choose a new, unused persistent directory and run a supervised fresh sync:
+
+   ```sh
+   DATA_DIR=/new-volume/pulley-bootstrap-retry pnpm sync
+   DATA_DIR=/new-volume/pulley-bootstrap-retry pnpm cli status --max-age-hours 24 --max-source-age-hours 24
+   DATA_DIR=/new-volume/pulley-bootstrap-retry pnpm cli backup /separate-volume/pulley-backups
+   ```
+
+   Keep the configured overrides path; if it was inside the failed DATA_DIR,
+   explicitly point `OVERRIDES_FILE` to that existing reviewed file. Inspect the
+   result, verify the backup, and update the scheduler's DATA_DIR only after these
+   steps succeed. Retain the failed directory as incident evidence.
+
+The recovery tests exercise both partial output and a completed but unpointed
+first run. This exception is for a verified first-run crash, not a way to discard
+an established comparison baseline or bypass the input-quality gate.
 
 ## Backup, restoration, and rollback drill
 

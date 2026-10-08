@@ -45,6 +45,7 @@ const scenarios = [
   },
   {
     name: "one matching milestone hiding two contradictory milestones",
+    humanResolvable: true,
     build: () =>
       inputs(
         [
@@ -108,7 +109,7 @@ describe("precision safeguards across all acceptance paths", () => {
     );
     expect(matchProjects(n).decisions[0]?.status).toBe(status);
   });
-  for (const { name, build } of scenarios) {
+  for (const { name, build, humanResolvable } of scenarios) {
     it(name, () => {
       const n = build();
       for (const register of [n.acme, [...n.acme].reverse()]) {
@@ -122,28 +123,28 @@ describe("precision safeguards across all acceptance paths", () => {
         ).not.toThrow();
         const target = n.pulley[0];
         if (!disputed || !target) throw new Error("missing fixture");
-        // Simulate a future code regression bypassing the matcher guard.
-        for (const reason of ["EXACT_ID", "OVERRIDE"] as const) {
-          const forged = report.decisions.map((d) =>
-            d === disputed ? { ...d, status: "matched" as const, pulleyId: target.id, reason } : d,
-          );
-          expect(() => assertPublicationInvariants(forged, register, n.pulley)).toThrow(
-            /Refusing to publish/,
-          );
-        }
+        checkAcceptanceBoundaries(
+          report.decisions,
+          disputed,
+          target.id,
+          register,
+          n.pulley,
+          !!humanResolvable,
+        );
         const loaded = parseOverrides(
           `acme_project_id,pulley_project_id,status,note\n${disputed.acmeId},${target.id},matched,previously confirmed\n`,
         );
         const overridden = applyOverrides(report, loaded, n);
-        expect(overridden.applied).toBe(0);
-        expect(overridden.report.counts.matched).toBe(0);
-        expect(overridden.problems.join(" ")).toMatch(/reconfirmation/);
+        const expectedMatches = Number(!!humanResolvable);
+        expect(overridden.applied).toBe(expectedMatches);
+        expect(overridden.report.counts.matched).toBe(expectedMatches);
+        if (!humanResolvable) expect(overridden.problems.join(" ")).toMatch(/reconfirmation/);
       }
     });
   }
 
-  it("holds a yearless match, but permits independently confirmed missing evidence", () => {
-    const n = inputs([acme()], [pulley({ name: "Store 1556 Remodel", street: "100 Main St" })]);
+  it("holds a yearless address-only match, but permits independently confirmed missing evidence", () => {
+    const n = inputs([acme()], [pulley({ name: "Reno Remodel", street: "100 Main St" })]);
     const report = matchProjects(n);
     const decision = report.decisions[0];
     expect(decision?.reason).toBe("INSUFFICIENT_EVIDENCE");
@@ -201,3 +202,21 @@ describe("precision safeguards across all acceptance paths", () => {
     expect(() => assertPublicationInvariants(report.decisions, n.acme, n.pulley)).not.toThrow();
   });
 });
+
+function checkAcceptanceBoundaries(
+  decisions: ReturnType<typeof matchProjects>["decisions"],
+  disputed: ReturnType<typeof matchProjects>["decisions"][number],
+  targetId: string,
+  register: ReturnType<typeof inputs>["acme"],
+  pool: ReturnType<typeof inputs>["pulley"],
+  humanResolvable: boolean,
+) {
+  for (const reason of ["EXACT_ID", "OVERRIDE"] as const) {
+    const forged = decisions.map((d) =>
+      d === disputed ? { ...d, status: "matched" as const, pulleyId: targetId, reason } : d,
+    );
+    const check = () => assertPublicationInvariants(forged, register, pool);
+    if (humanResolvable && reason === "OVERRIDE") expect(check).not.toThrow();
+    else expect(check).toThrow(/Refusing to publish/);
+  }
+}

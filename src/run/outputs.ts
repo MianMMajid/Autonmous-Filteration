@@ -297,7 +297,7 @@ export async function latestRunId(dataDir: string): Promise<string | null> {
     }
     if (entries.some((name) => RUN_ID_PATTERN.test(name) || name === "latest"))
       throw new SchemaError(
-        "Publication pointer missing despite existing output history; restore a verified snapshot before syncing",
+        "Publication pointer missing despite existing output history; restore a verified snapshot, or follow docs/DEPLOYMENT.md first-run crash recovery if nothing was ever published",
       );
     return null;
   }

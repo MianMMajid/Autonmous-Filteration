@@ -1,5 +1,14 @@
 # Changelog
 
+## Review follow-up — 2026-10-08
+
+- Pin pnpm setup to its commit target; retain customer output on approved host/backup storage instead of GitHub artifacts.
+- Narrow yearless holds to ambiguous ownership; allow explained human overrides of street/milestone discrepancies while preserving hard constraints. Rules version 2026-10-08.8.
+- Index safety ownership and exact-ID/store candidate paths; add a reproducible synthetic benchmark.
+- Document first-run crash recovery without deleting history, restore safe network cause codes, use freshness exit 9 for future timestamps, and reject empty evaluation populations explicitly.
+- Add 27 regressions (404 tests total); offline replay produces 324 matched, 26 review and 50 no-match. Existing publication unchanged; historical reports labeled and current documentation aligned.
+
+
 All notable changes to this project. Format follows Keep a Changelog.
 
 ## [Unreleased]

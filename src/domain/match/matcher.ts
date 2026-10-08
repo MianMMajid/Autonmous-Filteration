@@ -21,6 +21,7 @@ import {
   yearSignal,
 } from "./compat.ts";
 import { acmeNameIssue, matchSafetyIssue } from "./safety.ts";
+import { createSafetyIndex, type SafetyIndex } from "./safety-index.ts";
 import {
   type Candidate,
   type Evidence,
@@ -55,7 +56,7 @@ import {
  * Bump when a rule, weight, or tier changes. Recorded in run.json so a
  * historical decision can be attributed to the rules that produced it.
  */
-export const RULES_VERSION = "2026-10-08.7";
+export const RULES_VERSION = "2026-10-08.8";
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const pool = [...inputs.pulley]
@@ -65,6 +66,8 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
   const registerIds = knownAcmeIds(inputs.acme);
   const context: Context = {
     pool,
+    safety: createSafetyIndex(inputs.acme, pool),
+    pulleyById: new Map(pool.map((p) => [p.id, p])),
     excluded,
     acme: inputs.acme,
     sharedNumbers: numbersSharedByBuildings(inputs),
@@ -231,6 +234,8 @@ function numbersSharedByBuildings(inputs: NormalizedInputs): Set<string> {
 }
 
 interface Context {
+  readonly safety: SafetyIndex;
+  readonly pulleyById: ReadonlyMap<string, PulleyRecord>;
   readonly pool: readonly PulleyRecord[];
   readonly excluded: readonly PulleyRecord[];
   readonly acme: readonly AcmeProject[];
@@ -275,13 +280,31 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
 
 function decideFromEvidence(acme: AcmeProject, context: Context): MatchDecision {
   const state = acmeState(acme);
-  const scoped = context.pool.filter((p) => isInScope(acme, p));
   const sameYear = (p: PulleyRecord): boolean => temporalVerdict(acme, p) !== Temporal.Conflict;
 
-  const storeAll = scoped.filter((p) => isStoreCandidate(acme, p, context.sharedNumbers));
+  const exact = context.safety
+    .exactCandidates(acme)
+    .filter((p) => isExactIdCandidate(acme, p, context.sharedNumbers));
+  if (exact.length > 0)
+    return strongDecision(
+      acme,
+      rank(exact.map((p) => toCandidate(acme, p, Tier.ExactId))),
+      context,
+    );
+  const storeAll = context.safety
+    .storeCandidates(acme)
+    .filter((p) => isStoreCandidate(acme, p, context.sharedNumbers));
+  const sameYearStores = storeAll.filter(sameYear);
+  if (sameYearStores.length > 0)
+    return strongDecision(
+      acme,
+      rank(sameYearStores.map((p) => toCandidate(acme, p, Tier.Store))),
+      context,
+    );
+  // Only fallback tiers need the broad scoped pool. Common ID/store matches
+  // should not scan every unrelated permit (or calculate lower-tier uniqueness).
+  const scoped = context.pool.filter((p) => isInScope(acme, p));
   const tiers: ReadonlyArray<readonly [Tier, readonly PulleyRecord[]]> = [
-    [Tier.ExactId, scoped.filter((p) => isExactIdCandidate(acme, p, context.sharedNumbers))],
-    [Tier.Store, storeAll.filter(sameYear)],
     [
       Tier.Sequence,
       scoped.filter(
@@ -620,8 +643,8 @@ function strongDecision(
       `Acme is ${acme.status}, Pulley ${winner.pulleyId} is ${winner.pulleyStatus}`,
     );
   }
-  const target = context.pool.find((p) => p.id === winner.pulleyId);
-  const safety = target ? matchSafetyIssue(acme, target, context.acme, true) : null;
+  const target = context.pulleyById.get(winner.pulleyId);
+  const safety = target ? matchSafetyIssue(acme, target, context.safety, true) : null;
   if (safety) return review(acme, candidates, tier, safety.reason, safety.note);
   return {
     ...base(acme, [winner, ...candidates.filter((c) => c !== winner)], tier),

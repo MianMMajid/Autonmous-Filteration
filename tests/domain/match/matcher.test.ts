@@ -742,16 +742,9 @@ describe("matchProjects on the real dataset", () => {
     expect(matchProjects(normalized)).toEqual(report);
   });
 
-  it("withholds the 23 audited unsafe acceptances rather than meeting a coverage quota", () => {
-    expect(report.counts).toEqual({ matched: 309, needs_review: 41, no_match: 50 });
-    for (const id of [
-      "1992.1000",
-      "5746.1003",
-      "5970.1004",
-      "3960.1001",
-      "6409.1005",
-      "2970.1008",
-    ]) {
+  it("retains conflicting and ambiguous holds while allowing unique yearless store matches", () => {
+    expect(report.counts).toEqual({ matched: 324, needs_review: 26, no_match: 50 });
+    for (const id of ["1992.1000", "5746.1003", "5970.1004", "3960.1001", "6409.1005"]) {
       expect(report.decisions.find((d) => d.acmeId === id)?.status, id).toBe("needs_review");
     }
     expect(report.counts.matched + report.counts.needs_review + report.counts.no_match).toBe(400);

@@ -1,5 +1,6 @@
 import { isInScope, statusesAgree } from "../domain/match/compat.ts";
 import { matchSafetyIssue } from "../domain/match/safety.ts";
+import { createSafetyIndex } from "../domain/match/safety-index.ts";
 import type { MatchDecision } from "../domain/match/types.ts";
 import type { AcmeProject, PulleyRecord } from "../domain/model.ts";
 import { ExitCode, SyncError } from "../errors.ts";
@@ -57,6 +58,7 @@ function targetsAreValid(
   pulley: readonly PulleyRecord[],
 ): string[] {
   const out: string[] = [];
+  const safetyIndex = createSafetyIndex(acme, pulley);
   const acmeById = new Map(acme.map((a) => [a.id, a]));
   const pulleyById = new Map(pulley.map((p) => [p.id, p]));
   for (const d of decisions) {
@@ -76,7 +78,7 @@ function targetsAreValid(
       out.push(`${d.acmeId} is matched to ${target.id} against the status gate`);
     }
     if (a.identityDisputed) out.push(`${d.acmeId} is matched while its identity is disputed`);
-    const safety = matchSafetyIssue(a, target, acme, d.reason !== "OVERRIDE");
+    const safety = matchSafetyIssue(a, target, safetyIndex, d.reason !== "OVERRIDE");
     if (safety) out.push(`${d.acmeId} is matched despite ${safety.reason}: ${safety.note}`);
   }
   return out;

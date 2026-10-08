@@ -88,7 +88,7 @@ Address keys retain building designators in both prefix and suffix forms. Street
 suffixes and directionals are normalized by position; words inside the street's
 proper name are preserved (North Street is not silently equated with N Street).
 
-**Safety gate (rules 2026-10-08.7).** Ranking is not sufficient for acceptance.
+**Safety gate (rules 2026-10-08.8).** Ranking is not sufficient for acceptance.
 `domain/match/safety.ts` is used by the matcher, overrides, and publication:
 
 - Exact IDs do not bypass temporal contradictions. Explicit year conflicts,
@@ -109,8 +109,19 @@ proper name are preserved (North Street is not silently equated with N Street).
   of ownership even if that owner's match is withheld or another candidate
   wins for it. A conflicting site/year cannot inherit the permit silently.
 - Without a trusted full ID establishing the site/year, unknown temporal
-  evidence produces `INSUFFICIENT_EVIDENCE`. A human can supply missing
-  evidence using an override; contradictions require source correction first.
+  evidence produces `INSUFFICIENT_EVIDENCE`, except when there is exactly one
+  Acme project for the site and exactly one compatible candidate identified by
+  its current/former store number. Address-, sequence-, and date-based competitors
+  count against this exception. Multiple Acme lines or compatible candidates still
+  need temporal evidence. Jurisdiction-city differences do not block a unique store.
+- A human override with an explanatory note can resolve a street-name or milestone
+  discrepancy. Explicit year/identity conflicts, another registered owner,
+  banner/state/exclusion/status rules and one-building/one-year assignment remain
+  enforced. Dates in another calendar year alone are a soft signal for a reviewed
+  override; an explicit conflicting program year in a name is a hard constraint.
+- Per-run indexes select relevant owners by site, full ID, store, street, and
+  locality. Exact-ID and store tiers use indexed candidates before broader fallback
+  scans. No ownership cache survives a new run.
 
 **Assignment pass.** A Pulley project cannot be assigned across sites or
 program years. Full-ID anchors must agree; otherwise date anchors within
@@ -276,13 +287,14 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 309 (tier 1: 92, tier 2: 180, tier 3: 15, tier 4: 14, tier 5: 8) |
-| needs_review | 41 (20 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
+| matched | 324 (tier 1: 92, tier 2: 195, tier 3: 15, tier 4: 14, tier 5: 8) |
+| needs_review | 26 (5 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
 | no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
 | status differences on matched rows | 29 (reported, not an outcome) |
 
-These are coverage counts, not an accuracy measurement. Twenty-three
-previously accepted rows are now withheld for review. See `docs/VALIDATION.md`
+These are coverage counts, not an accuracy measurement. Narrowing the temporal
+requirement restores 15 unique store matches relative to rules 2026-10-08.7;
+all seven evidence-conflict holds remain. See `docs/VALIDATION.md`
 for historical tuning and the remaining independent-validation requirement. Counts come from `tests/domain/match/matcher.test.ts`
 running the matcher over the archived fixtures; they will drift as the data
 changes.
