@@ -105,6 +105,61 @@ export function acmeState(acme: AcmeProject): string | null {
   return acme.site?.state ?? acme.parsedName.canonical?.state ?? null;
 }
 
+// ---------- Dates ----------
+
+const DAY_MS = 86_400_000;
+
+function daysBetween(a: string | null | undefined, b: string | null | undefined): number | null {
+  if (!a || !b) return null;
+  const diff = Math.abs(Date.parse(a) - Date.parse(b)) / DAY_MS;
+  return Number.isFinite(diff) ? diff : null;
+}
+
+/**
+ * Smallest gap in days between corresponding milestone dates on both sides,
+ * or null when no pair of dates exists. Observed 2026-10-08: for exact-id
+ * matches with dates, 57 of 71 are within 7 days, so Pulley dates are the
+ * Acme Key Dates with small jitter.
+ */
+export function dateProximityDays(acme: AcmeProject, pulley: PulleyRecord): number | null {
+  const d = acme.dates;
+  if (!d) return null;
+  const gaps = [
+    daysBetween(d.constructionStart, pulley.constructionStart),
+    daysBetween(d.permitSubmittedActual ?? d.permitSubmittedProjected, pulley.permitSubmitted),
+    daysBetween(d.permitApproved, pulley.permitApproved),
+  ].filter((gap): gap is number => gap !== null);
+  return gaps.length === 0 ? null : Math.min(...gaps);
+}
+
+export const Temporal = {
+  /** Same permit timeline: dates within a month, or the year written in the name agrees. */
+  Same: "same",
+  /** Same year, dates a few months apart: plausible for a folded permit. */
+  Near: "near",
+  /** Nothing to compare. */
+  Unknown: "unknown",
+  /** Another year's work: the name says a different year, or the dates are far apart in a different year. */
+  Conflict: "conflict",
+} as const;
+export type Temporal = (typeof Temporal)[keyof typeof Temporal];
+
+const SAME_DAYS = 30;
+const CONFLICT_DAYS = 180;
+
+export function temporalVerdict(acme: AcmeProject, pulley: PulleyRecord): Temporal {
+  const year = yearSignal(acme, pulley);
+  if (year === YearSignal.NameDifferent) return Temporal.Conflict;
+  if (year === YearSignal.NameEqual) return Temporal.Same;
+  const gap = dateProximityDays(acme, pulley);
+  if (gap !== null && gap <= SAME_DAYS) return Temporal.Same;
+  if (year === YearSignal.DateDifferent) {
+    return gap !== null && gap <= CONFLICT_DAYS ? Temporal.Near : Temporal.Conflict;
+  }
+  if (year === YearSignal.DateEqual) return Temporal.Near;
+  return Temporal.Unknown;
+}
+
 // ---------- Status gate ----------
 
 const ACME_CLOSED: ReadonlySet<string> = new Set(["closed"]);

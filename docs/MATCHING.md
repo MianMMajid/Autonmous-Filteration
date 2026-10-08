@@ -33,15 +33,23 @@ City is never a filter (brief: jurisdiction city differs from Acme's city).
 
 Evaluated in order. The first tier with any candidate decides. Within that
 tier candidates are ranked by evidence (see Scoring); a unique best candidate
-wins, a tie produces `needs_review` with all candidates listed.
+wins, a tie produces `needs_review` with all candidates listed. Tiers 2 to 6
+first drop candidates whose temporal verdict is `conflict` (see Temporal
+evidence): the brief folds several Acme lines into one permit only for the
+same store and the same year.
 
 | Tier | Candidate rule | Reason code on match |
 |---|---|---|
 | 1 | Acme `store.sequence` appears verbatim in the Pulley name | `EXACT_ID` |
-| 2 | Acme store number, or the site's former location number, appears in the Pulley name | `STORE_TYPE_YEAR` |
-| 3 | Pulley name has no store but carries this sequence, sits in this city, and across the whole register exactly one Acme project with a compatible type and non-contradicting year fits it | `SEQUENCE_LOCALITY` |
+| 2 | Acme store number, or the site's former location number, appears in the Pulley name. A number that identifies two buildings (one site's former number is another's current number) also needs city or street agreement | `STORE_TYPE_YEAR` |
+| 3 | Pulley name has no store but carries this sequence, sits in this city, and across the whole register exactly one Acme project with a compatible type and no temporal conflict fits it | `SEQUENCE_LOCALITY` |
 | 4 | Pulley name has no store; normalized street equals the Acme site street; sequence does not contradict | `ADDRESS` |
-| 5 | Weak evidence only: same street name with a different house number, or same city plus compatible type plus non-contradicting year | never matches; `WEAK_EVIDENCE` review |
+| 5 | Pulley name has no store or full id; a milestone date lands within 7 days of the Acme Key Date; same city; compatible type; and exactly one Acme project in the register fits it | `DATE_LOCALITY` |
+| 6 | Weak evidence only: same street name with a different house number, or same city plus compatible type | never matches; `WEAK_EVIDENCE` review |
+
+If tiers 1 to 5 yield nothing but store-identified projects exist in other
+years, the result is `no_match` with reason `UNRELATED_ONLY` and those
+projects listed, in preference to a tier 6 guess.
 
 Store numbers in Pulley names are extracted by `normalize/name.ts`. A 4-digit
 token preceded by a store marker (`#`, `Store`, `Club`, `AM-`, `Acme`, `|`)
@@ -59,23 +67,39 @@ a Pulley umbrella type (Remodel, Expansion, New Build) covering an Acme line
 of type Remodel, Expansion, Coffee Tenant, Deli Remodel, or Pharmacy
 Relocation. EV Charging only matches EV Charging. Signage never matches.
 
+## Temporal evidence
+
+Pulley dates are the Acme Key Dates with small jitter: among exact-id
+matches with dates on both sides, 57 of 71 are within 7 days and 63 within
+30. The matcher computes the smallest gap between corresponding milestones
+(construction start, permit submitted, permit approved) and combines it with
+the year written in the name:
+
+| Verdict | When |
+|---|---|
+| `same` | Year in the Pulley name equals the program year, or a milestone is within 30 days |
+| `near` | Same year by date, or a different year but a milestone within 180 days (year-boundary slip) |
+| `unknown` | No year in the name and no overlapping dates |
+| `conflict` | Year in the name differs, or the date year differs with no milestone within 180 days |
+
 ## Scoring (ordering within a tier)
 
 | Evidence | Weight |
 |---|---|
 | Exact id in name | +100 |
+| Milestone within 7 days | +45 |
+| Temporal `same` / `near` / `conflict` (tier 1 only) | +30 / +8 / -35 |
 | Sequence equal / different | +30 / -30 |
 | Type equal / compatible / incompatible | +20 / +8 / -40 |
-| Year in name equal / different | +25 / -35 |
-| Year by Pulley date equal / different | +12 / -6 |
 | Exact street / street name only | +15 / +5 |
 | City matches | +3 |
 | Statuses agree (status gate) | +20 |
 
 Weights only order plausible candidates; hard exclusions (banner, state,
-pathfinder, signage, contradicting store or sequence) never reach scoring.
-Status agreement outranks every soft signal so a live duplicate beats a
-canceled one, but never outranks an exact id.
+pathfinder, signage, contradicting store or sequence, temporal conflict)
+never reach scoring. Status agreement outranks every soft signal so a live
+duplicate beats a canceled one, but never outranks an exact id or exact
+dates.
 
 ## Decision after ranking
 
@@ -84,10 +108,11 @@ canceled one, but never outranks an exact id.
 | One best candidate, compatible type, statuses agree | `matched` |
 | Several candidates tie, all canceled or all live | `needs_review` (`AMBIGUOUS`) |
 | Several tie, exactly one is live | the live one is `matched` |
-| Best candidate has incompatible type, and every candidate is explicitly another line (different sequence or year) | `no_match` (`UNRELATED_ONLY`) |
+| Best candidate has incompatible type, and every candidate has a different sequence | `no_match` (`UNRELATED_ONLY`, other line) |
 | Best candidate has incompatible type otherwise | `needs_review` (`TYPE_MISMATCH`) |
 | Best candidate fails the status gate | `needs_review` (`STATUS_CONFLICT`) |
-| Only tier 5 evidence | `needs_review` (`WEAK_EVIDENCE`) |
+| Only store-identified projects in other years | `no_match` (`UNRELATED_ONLY`, other year) |
+| Only tier 6 evidence | `needs_review` (`WEAK_EVIDENCE`) |
 | Only pathfinder or signage projects reference the id or store | `no_match` (`EXCLUDED_ONLY`) |
 | Nothing at all | `no_match` (`NO_CANDIDATE`) |
 
@@ -137,12 +162,14 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 349 (tier 1: 97, tier 2: 226, tier 3: 15, tier 4: 11) |
-| needs_review | 17 |
-| no_match | 34 (23 no candidate, 7 unrelated lines only, 4 pathfinder only) |
+| matched | 336 (tier 1: 97, tier 2: 201, tier 3: 16, tier 4: 14, tier 5: 8) |
+| needs_review | 12 |
+| no_match | 52 (23 no candidate, 24 other year or other line, 5 pathfinder only) |
 
-Counts come from `tests/domain/match/matcher.test.ts` running the matcher
-over the archived fixtures; they will drift as the data changes.
+See `docs/VALIDATION.md` for the hand check behind these numbers and the
+match-rate estimate. Counts come from `tests/domain/match/matcher.test.ts`
+running the matcher over the archived fixtures; they will drift as the data
+changes.
 
 ## Observed data facts that justify the rules (as of 2026-10-08)
 

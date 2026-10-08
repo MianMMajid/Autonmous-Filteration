@@ -6,6 +6,12 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Phase 5 validation: hand check of a stratified sample (docs/VALIDATION.md)
+  led to temporal evidence (date proximity to Key Dates, year verdicts),
+  exclusion of other-year store candidates, a locality guard for store
+  numbers shared by two buildings, exact dates as a tie-breaker, and a new
+  dates-plus-locality tier. 336 matched, 12 needs_review, 52 no_match.
+
 - Phase 4 outputs: `mapping.csv` with the exact required columns,
   `review.csv`, `decisions.csv` with evidence, `pulley-unmatched.csv`,
   `summary.txt` with a diff against the previous run, and `run.json`.

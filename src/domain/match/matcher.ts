@@ -1,12 +1,16 @@
 import type { AcmeProject, NormalizedInputs, PulleyRecord } from "../model.ts";
 import {
   acmeState,
+  acmeStoreNumbers,
   cityMatches,
+  dateProximityDays,
   isPulleyCanceled,
   sequenceRelation,
   statusesAgree,
   storeContradicts,
   storeMatches,
+  Temporal,
+  temporalVerdict,
   typesCompatible,
   typesEqual,
   yearSignal,
@@ -20,7 +24,6 @@ import {
   ReasonCode,
   SequenceRelation,
   Tier,
-  YearSignal,
 } from "./types.ts";
 
 /**
@@ -33,9 +36,13 @@ import {
  *   tier 2 = pool entries whose name carries the store number (current or former)
  *   tier 3 = no store in the name, but the sequence plus city identify this Acme project uniquely
  *   tier 4 = no store in the name and an exact street match
- *   tier 5 = weak evidence only (street name without house number, or locality + type + year)
- * The first tier with any candidate decides. Within it, candidates are ranked
- * by evidence; a unique best candidate wins, otherwise needs_review.
+ *   tier 5 = no store in the name, dates within a week of the Key Dates in the same city, unique
+ *   tier 6 = weak evidence only (street name without house number, or locality + type + year)
+ * Tiers 2 to 5 drop candidates whose dates place them in another year: the
+ * brief folds several Acme lines into one permit only for the same store
+ * and the same year. The first tier with any candidate decides. Within it,
+ * candidates are ranked by evidence; a unique best candidate wins, otherwise
+ * needs_review.
  */
 
 export function matchProjects(inputs: NormalizedInputs): MatchReport {
@@ -44,7 +51,12 @@ export function matchProjects(inputs: NormalizedInputs): MatchReport {
     .sort((a, b) => a.id.localeCompare(b.id));
   const excluded = inputs.pulley.filter((p) => p.isPathfinder || p.isSignage);
   const registerIds = knownAcmeIds(inputs.acme);
-  const context: Context = { pool, excluded, acme: inputs.acme };
+  const context: Context = {
+    pool,
+    excluded,
+    acme: inputs.acme,
+    sharedNumbers: numbersSharedByBuildings(inputs),
+  };
 
   const decisions = inputs.acme.map((acme) => decide(acme, context));
 
@@ -86,10 +98,24 @@ function knownAcmeIds(register: readonly AcmeProject[]): Set<string> {
   return ids;
 }
 
+/**
+ * Store numbers that identify more than one building, because one site's
+ * former number is another site's current number. A name carrying such a
+ * number needs locality corroboration before it counts as a store match.
+ */
+function numbersSharedByBuildings(inputs: NormalizedInputs): Set<number> {
+  const shared = new Set<number>();
+  for (const [number, sites] of inputs.sitesByLocation) {
+    if (new Set(sites.map((s) => s.siteId)).size > 1) shared.add(number);
+  }
+  return shared;
+}
+
 interface Context {
   readonly pool: readonly PulleyRecord[];
   readonly excluded: readonly PulleyRecord[];
   readonly acme: readonly AcmeProject[];
+  readonly sharedNumbers: ReadonlySet<number>;
 }
 
 // ---------- Per-project decision ----------
@@ -99,29 +125,66 @@ function decide(acme: AcmeProject, context: Context): MatchDecision {
   const scoped = context.pool.filter(
     (p) => p.banner === acme.banner && (state === null || p.state === state),
   );
+  const sameYear = (p: PulleyRecord): boolean => temporalVerdict(acme, p) !== Temporal.Conflict;
 
+  const storeAll = scoped.filter((p) => isStoreCandidate(acme, p, context.sharedNumbers));
   const tiers: ReadonlyArray<readonly [Tier, readonly PulleyRecord[]]> = [
     [Tier.ExactId, scoped.filter((p) => p.parsedName.fullIds.includes(acme.id))],
-    [Tier.Store, scoped.filter((p) => storeMatches(acme, p))],
+    [Tier.Store, storeAll.filter(sameYear)],
     [
       Tier.Sequence,
       scoped.filter(
-        (p) => isSequenceCandidate(acme, p) && identifiedAcmeId(p, context.acme) === acme.id,
+        (p) =>
+          isSequenceCandidate(acme, p) &&
+          sameYear(p) &&
+          identifiedAcmeId(p, context.acme) === acme.id,
       ),
     ],
-    [Tier.Address, scoped.filter((p) => isAddressCandidate(acme, p))],
-    [Tier.Locality, scoped.filter((p) => isWeakCandidate(acme, p))],
+    [Tier.Address, scoped.filter((p) => isAddressCandidate(acme, p) && sameYear(p))],
+    [
+      Tier.Dates,
+      scoped.filter(
+        (p) => isDateCandidate(acme, p) && identifiedAcmeIdByDates(p, context.acme) === acme.id,
+      ),
+    ],
   ];
 
   for (const [tier, records] of tiers) {
     if (records.length === 0) continue;
     const candidates = rank(records.map((p) => toCandidate(acme, p, tier)));
-    return tier === Tier.Locality
-      ? weakDecision(acme, candidates)
-      : strongDecision(acme, candidates, context);
+    return strongDecision(acme, candidates, context);
   }
 
+  if (storeAll.length > 0) {
+    // Projects at this store exist but all belong to another year: a
+    // different permit. More honest than a weak locality guess.
+    const candidates = rank(storeAll.map((p) => toCandidate(acme, p, Tier.Store)));
+    return unrelated(acme, candidates, "other-year");
+  }
+
+  const weak = scoped.filter((p) => isWeakCandidate(acme, p) && sameYear(p));
+  if (weak.length > 0) {
+    return weakDecision(acme, rank(weak.map((p) => toCandidate(acme, p, Tier.Locality))));
+  }
   return noCandidate(acme, context.excluded);
+}
+
+/** Store number in the name identifies this building (and, for shared numbers, the locality agrees). */
+function isStoreCandidate(
+  acme: AcmeProject,
+  pulley: PulleyRecord,
+  sharedNumbers: ReadonlySet<number>,
+): boolean {
+  if (!storeMatches(acme, pulley)) return false;
+  const mine = acmeStoreNumbers(acme);
+  const viaShared = pulley.parsedName.storeNumbers.every(
+    (n) => !mine.includes(n) || sharedNumbers.has(n),
+  );
+  if (!viaShared) return true;
+  const streetAgrees =
+    (pulley.streetKey !== null && pulley.streetKey === acme.site?.streetKey) ||
+    (pulley.streetNameKey !== null && pulley.streetNameKey === acme.site?.streetNameKey);
+  return cityMatches(acme, pulley) || streetAgrees;
 }
 
 /** Name has no store, carries this exact sequence, and sits in this city. */
@@ -147,8 +210,42 @@ function identifiedAcmeId(pulley: PulleyRecord, register: readonly AcmeProject[]
     if (other.banner !== pulley.banner) continue;
     if (!isSequenceCandidate(other, pulley)) continue;
     if (!typesCompatible(other.projectType, pulley.projectType)) continue;
-    const year = yearSignal(other, pulley);
-    if (year === YearSignal.NameDifferent || year === YearSignal.DateDifferent) continue;
+    if (temporalVerdict(other, pulley) === Temporal.Conflict) continue;
+    if (found !== null) return null;
+    found = other.id;
+  }
+  return found;
+}
+
+const SAME_DATES_DAYS = 7;
+
+/**
+ * Name has no store or full id, sits in this city, type is compatible, and a
+ * milestone date lands within a week of the Acme Key Date. Pulley dates are
+ * the Acme dates with small jitter (see `dateProximityDays`), so this is
+ * strong evidence once the reverse uniqueness check passes.
+ */
+function isDateCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
+  const gap = dateProximityDays(acme, pulley);
+  return (
+    pulley.parsedName.storeNumbers.length === 0 &&
+    pulley.parsedName.fullIds.length === 0 &&
+    sequenceRelation(acme, pulley) !== SequenceRelation.Different &&
+    gap !== null &&
+    gap <= SAME_DATES_DAYS &&
+    cityMatches(acme, pulley) &&
+    typesCompatible(acme.projectType, pulley.projectType)
+  );
+}
+
+function identifiedAcmeIdByDates(
+  pulley: PulleyRecord,
+  register: readonly AcmeProject[],
+): string | null {
+  let found: string | null = null;
+  for (const other of register) {
+    if (other.banner !== pulley.banner) continue;
+    if (!isDateCandidate(other, pulley)) continue;
     if (found !== null) return null;
     found = other.id;
   }
@@ -170,12 +267,8 @@ function isWeakCandidate(acme: AcmeProject, pulley: PulleyRecord): boolean {
   if (sequenceRelation(acme, pulley) === SequenceRelation.Different) return false;
   const sameStreetName =
     pulley.streetNameKey !== null && pulley.streetNameKey === acme.site?.streetNameKey;
-  const year = yearSignal(acme, pulley);
   const sameLocality =
-    cityMatches(acme, pulley) &&
-    typesCompatible(acme.projectType, pulley.projectType) &&
-    year !== YearSignal.NameDifferent &&
-    year !== YearSignal.DateDifferent;
+    cityMatches(acme, pulley) && typesCompatible(acme.projectType, pulley.projectType);
   return sameStreetName || sameLocality;
 }
 
@@ -183,6 +276,8 @@ function toCandidate(acme: AcmeProject, pulley: PulleyRecord, tier: Tier): Candi
   const evidence: Evidence = {
     exactId: pulley.parsedName.fullIds.includes(acme.id),
     storeMatch: storeMatches(acme, pulley),
+    proximityDays: dateProximityDays(acme, pulley),
+    temporal: temporalVerdict(acme, pulley),
     typeCompatible: typesCompatible(acme.projectType, pulley.projectType),
     typeEqual: typesEqual(acme.projectType, pulley.projectType),
     year: yearSignal(acme, pulley),
@@ -205,7 +300,8 @@ function toCandidate(acme: AcmeProject, pulley: PulleyRecord, tier: Tier): Candi
 
 /**
  * Evidence weights. Hard exclusions (contradicting store or sequence,
- * excluded plans) never reach scoring; this only orders plausible candidates.
+ * another year, excluded plans) never reach scoring; this only orders
+ * plausible candidates. See docs/MATCHING.md, "Scoring".
  */
 function scoreEvidence(e: Evidence): number {
   let score = 0;
@@ -215,27 +311,26 @@ function scoreEvidence(e: Evidence): number {
   if (e.typeEqual) score += 20;
   else if (e.typeCompatible) score += 8;
   else score -= 40;
-  score += yearWeight(e.year);
+  score += temporalWeight(e);
   if (e.streetExact) score += 15;
   else if (e.streetName) score += 5;
   if (e.cityMatch) score += 3;
-  // Outranks every soft signal (date year, street name, city) but not an
-  // exact id, so a live duplicate beats a canceled one and nothing else flips.
+  // Outranks every soft signal (near dates, street name, city) but not an
+  // exact id or exact dates, so a live duplicate beats a canceled one.
   if (e.statusAgree) score += 20;
   return score;
 }
 
-function yearWeight(year: YearSignal): number {
-  switch (year) {
-    case YearSignal.NameEqual:
-      return 25;
-    case YearSignal.DateEqual:
-      return 12;
-    case YearSignal.None:
+function temporalWeight(e: Evidence): number {
+  if (e.proximityDays !== null && e.proximityDays <= 7) return 45;
+  switch (e.temporal) {
+    case Temporal.Same:
+      return 30;
+    case Temporal.Near:
+      return 8;
+    case Temporal.Unknown:
       return 0;
-    case YearSignal.DateDifferent:
-      return -6;
-    case YearSignal.NameDifferent:
+    case Temporal.Conflict:
       return -35;
   }
 }
@@ -288,9 +383,9 @@ function strongDecision(
 }
 
 /**
- * An incompatible type is a review item unless the candidate is explicitly
- * another Acme line (different sequence) or another year, in which case
- * nothing at this store relates and the honest answer is no_match.
+ * An incompatible type is a review item unless every candidate is explicitly
+ * another Acme line (different sequence), in which case nothing at this
+ * store relates and the honest answer is no_match.
  */
 function unrelatedOrMismatch(
   acme: AcmeProject,
@@ -299,22 +394,9 @@ function unrelatedOrMismatch(
   tier: Tier,
 ): MatchDecision {
   const explicitlyOther = candidates.every(
-    (c) =>
-      !c.evidence.typeCompatible &&
-      (c.evidence.sequence === SequenceRelation.Different ||
-        c.evidence.year === YearSignal.NameDifferent ||
-        c.evidence.year === YearSignal.DateDifferent),
+    (c) => !c.evidence.typeCompatible && c.evidence.sequence === SequenceRelation.Different,
   );
-  if (explicitlyOther) {
-    const listed = candidates.map((c) => `${c.pulleyId} (${c.pulleyType})`).join(", ");
-    return {
-      ...base(acme, candidates, tier),
-      status: OutputStatus.NoMatch,
-      pulleyId: null,
-      reason: ReasonCode.UnrelatedOnly,
-      note: `only other lines at this store: ${listed}`,
-    };
-  }
+  if (explicitlyOther) return unrelated(acme, candidates, "other-line");
   return review(
     acme,
     candidates,
@@ -322,6 +404,29 @@ function unrelatedOrMismatch(
     ReasonCode.TypeMismatch,
     `best candidate ${winner.pulleyId} is ${winner.pulleyType}; Acme line is ${acme.projectType}`,
   );
+}
+
+function unrelated(
+  acme: AcmeProject,
+  candidates: readonly Candidate[],
+  kind: "other-line" | "other-year",
+): MatchDecision {
+  const listed = candidates
+    .map(
+      (c) =>
+        `${c.pulleyId} (${c.pulleyType}${c.evidence.proximityDays !== null ? `, dates ${Math.round(c.evidence.proximityDays)}d apart` : ""})`,
+    )
+    .join(", ");
+  return {
+    ...base(acme, candidates, Tier.Store),
+    status: OutputStatus.NoMatch,
+    pulleyId: null,
+    reason: ReasonCode.UnrelatedOnly,
+    note:
+      kind === "other-line"
+        ? `only other lines at this store: ${listed}`
+        : `only other years' work at this store: ${listed}`,
+  };
 }
 
 /** Tier 5 never matches; it surfaces the likely answer for a human. */
@@ -386,6 +491,8 @@ function reasonForTier(tier: Tier): ReasonCode {
       return ReasonCode.SequenceLocality;
     case Tier.Address:
       return ReasonCode.Address;
+    case Tier.Dates:
+      return ReasonCode.DateLocality;
     case Tier.Locality:
       return ReasonCode.WeakEvidence;
   }
@@ -418,8 +525,9 @@ function describeWinner(candidate: Candidate | undefined): string {
   else if (e.storeMatch) parts.push("store");
   if (e.typeEqual) parts.push("same type");
   else if (e.typeCompatible) parts.push("compatible type");
-  if (e.year === YearSignal.NameEqual) parts.push("year in name");
-  else if (e.year === YearSignal.DateEqual) parts.push("year by date");
+  if (e.proximityDays !== null && e.proximityDays <= 7) parts.push("same dates");
+  else if (e.temporal === Temporal.Same) parts.push("same year");
+  else if (e.temporal === Temporal.Near) parts.push("near dates");
   if (e.sequence === SequenceRelation.Equal) parts.push("sequence");
   if (e.streetExact) parts.push("street");
   else if (e.streetName) parts.push("street name");
