@@ -6,6 +6,13 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ### Added
 
+- Phase 3 matcher: deterministic five-tier matching (exact id, store,
+  sequence plus locality, exact address, weak evidence) with evidence
+  scoring, type compatibility for umbrella permits, former-location-number
+  support, the canceled-on-both-sides status gate, live-over-canceled
+  tie-breaking, and stable reason codes for every decision. On the
+  2026-10-08 dataset: 349 matched, 17 needs_review, 34 no_match.
+
 - Phase 2 normalization: canonical `AcmeProject`, `AcmeSite`, and
   `PulleyRecord` models; project-name parser that extracts full ids, store
   numbers, sequences, years, canonical `STORE.SEQ-CITY-ST-BANNER-TYPE-YEAR`
