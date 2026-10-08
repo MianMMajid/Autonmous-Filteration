@@ -1,5 +1,19 @@
 # Changelog
 
+## Readiness completion — 2026-10-08 (rules 2026-10-08.9)
+
+- Support evidenced EV umbrella permits and explained review decisions; hold a
+  competing dedicated EV candidate or unknown permit year.
+- Enforce Acme source contradictions symmetrically at matching, override and
+  publication boundaries; recognize explicit sign-permit vocabulary.
+- Distinguish soft reviewer-resolvable evidence from hard conflicts in CSV advice.
+- Refuse conflicting duplicate overrides, validate real decision dates, preserve
+  interrupted output directories, and restrict new raw archive permissions.
+- Generate a hashed run-specific handoff alongside the mapping; demonstrate
+  review/repeat/upstream-change behavior and document a 50-case record review.
+- Current fixture coverage: 323 matched, 27 review, 50 no-match. These counts and
+  the exploratory record review do not certify production matching accuracy.
+
 ## Review follow-up — 2026-10-08
 
 - Pin pnpm setup to its commit target; retain customer output on approved host/backup storage instead of GitHub artifacts.

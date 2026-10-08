@@ -86,7 +86,10 @@ export function parseProjectName(raw: string): ParsedName {
     text,
     markers,
     canceledMarker,
-    signageHint: /\bSIGNAGE\b/.test(upper),
+    signageHint:
+      /\bSIGNAGE\b|\b(?:SIGN|SIGNS)\s+(?:PERMIT|PACKAGE|INSTALLATION|REPLACEMENT|REMODEL)\b|\b(?:MONUMENT|PYLON|EXTERIOR|WALL)\s+SIGNS?\b/.test(
+        upper,
+      ) || markers.some((marker) => /^(?:sign|signs)$/i.test(marker.trim())),
     fullIds: facts.fullIds,
     storeNumbers: facts.storeNumbers,
     sequences: facts.sequences,

@@ -40,6 +40,11 @@ export function pipeline(dataDir: string) {
   return {
     config,
     calls: () => calls,
+    changeProject: (id: string, changes: Record<string, unknown>) => {
+      const project = projects.find((project) => project["id"] === id);
+      if (!project) throw new Error(`Unknown fixture project ${id}`);
+      Object.assign(project, changes);
+    },
     collapse: () => {
       projects = projects.slice(0, 1);
     },

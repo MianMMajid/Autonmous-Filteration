@@ -4,6 +4,7 @@ import {
   acmeStoreNumbers,
   cityMatches,
   dateProximityDays,
+  isAcmeClosed,
   isInScope,
   isPulleyCanceled,
   milestoneGaps,
@@ -12,6 +13,7 @@ import {
   Temporal,
   temporalVerdict,
   typesCompatible,
+  typesEqual,
 } from "./compat.ts";
 import type { SafetyIndex } from "./safety-index.ts";
 import { ReasonCode } from "./types.ts";
@@ -19,10 +21,23 @@ import { ReasonCode } from "./types.ts";
 export interface SafetyIssue {
   readonly reason: typeof ReasonCode.EvidenceConflict | typeof ReasonCode.InsufficientEvidence;
   readonly note: string;
+  readonly resolution: "source_correction" | "human_confirmation";
 }
 
 /** Source contradictions matter even when there is no Pulley candidate. */
 export function acmeNameIssue(acme: AcmeProject): string | null {
+  if (acme.parsedName.canceledMarker && !isAcmeClosed(acme.status))
+    return "Acme name says canceled but its structured status disagrees";
+  if (acme.parsedName.signageHint && !typesEqual(acme.projectType, "Signage"))
+    return "Acme name says signage but its structured project type disagrees";
+  const canonical = acme.parsedName.canonical;
+  if (
+    canonical &&
+    (canonical.state !== acmeState(acme) || bannerFromCode(canonical.bannerCode) !== acme.banner)
+  )
+    return "Acme canonical name contradicts its site organization or state";
+  if (acme.parsedName.storeNumbers.some((store) => !acmeStoreNumbers(acme).includes(store)))
+    return "Acme name identifies another building";
   if (acme.parsedName.years.some((year) => year !== acme.programYear))
     return "Acme project name contradicts its structured program year";
   const allowed = new Set(acmeStoreNumbers(acme).map((store) => `${store}.${acme.sequence}`));
@@ -44,16 +59,46 @@ export function matchSafetyIssue(
   automatic: boolean,
 ): SafetyIssue | null {
   const register = index.related(acme, pulley);
-  const issue = pairConflict(acme, pulley, automatic) ?? ownershipConflict(acme, pulley, register);
-  if (issue) return { reason: ReasonCode.EvidenceConflict, note: issue };
+  const hardIssue = pairConflict(acme, pulley, false) ?? ownershipConflict(acme, pulley, register);
+  if (hardIssue)
+    return {
+      reason: ReasonCode.EvidenceConflict,
+      note: hardIssue,
+      resolution: "source_correction",
+    };
+  const softIssue = automatic ? pairConflict(acme, pulley, true) : null;
+  if (softIssue)
+    return {
+      reason: ReasonCode.EvidenceConflict,
+      note: softIssue,
+      resolution: "human_confirmation",
+    };
   const identifiedYear = register.some(
     (other) =>
       !other.identityDisputed &&
+      !acmeNameIssue(other) &&
       isInScope(other, pulley) &&
       other.siteId === acme.siteId &&
       other.programYear === acme.programYear &&
       namesProject(other, pulley),
   );
+  // EV may share the store/year umbrella permit, but a dedicated EV candidate
+  // or an unestablished permit year must be resolved before automatic folding.
+  if (
+    automatic &&
+    typesEqual(acme.projectType, "EV Charging") &&
+    !typesEqual(acme.projectType, pulley.projectType)
+  ) {
+    if (
+      (!identifiedYear && temporalVerdict(acme, pulley) === Temporal.Unknown) ||
+      index.compatibleCandidates(acme).some((p) => typesEqual(p.projectType, "EV Charging"))
+    )
+      return {
+        reason: ReasonCode.InsufficientEvidence,
+        note: "Confirm EV work is included in this umbrella permit; a dedicated EV candidate exists or its program year is unestablished",
+        resolution: "human_confirmation",
+      };
+  }
   const uniqueStoreMatch =
     automatic &&
     !identifiedYear &&
@@ -69,6 +114,7 @@ export function matchSafetyIssue(
   ) {
     return {
       reason: ReasonCode.InsufficientEvidence,
+      resolution: "human_confirmation",
       note: "No exact full id or temporal evidence resolves ownership; the single-project, unique-store-candidate exception does not apply",
     };
   }
@@ -79,6 +125,7 @@ export function matchSafetyIssue(
   )
     return {
       reason: ReasonCode.InsufficientEvidence,
+      resolution: "human_confirmation",
       note: "Another program year also fits this permit; no unique strong anchor resolves ownership",
     };
   return null;

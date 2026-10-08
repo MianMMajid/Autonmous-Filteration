@@ -18,7 +18,7 @@ bad-id,prj_a,matched,
 1556.1004,prj_a,maybe,
 1556.1005,,matched,
 1556.1006,prj_b,no_match,
-1556.1002,prj_c,matched,duplicate
+1556.1002,prj_a,matched,confirmed
 `;
     const { overrides, problems } = parseOverrides(text, "test.csv");
     expect(overrides).toEqual([

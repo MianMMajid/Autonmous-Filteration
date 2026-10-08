@@ -24,7 +24,7 @@ describe("typesCompatible", () => {
     expect(typesCompatible("Deli Remodel", "New Build")).toBe(true);
   });
   it("rejects distinct infrastructure and signage", () => {
-    expect(typesCompatible("EV Charging", "Remodel")).toBe(false);
+    expect(typesCompatible("EV Charging", "Remodel")).toBe(true);
     expect(typesCompatible("Remodel", "EV Charging")).toBe(false);
     expect(typesCompatible("Remodel", "Signage")).toBe(false);
     expect(typesCompatible("New Build", "Remodel")).toBe(false);

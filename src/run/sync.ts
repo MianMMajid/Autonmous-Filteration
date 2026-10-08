@@ -11,6 +11,7 @@ import {
   renderUnmatchedPulleyCsv,
 } from "../output/csv.ts";
 import { diffRuns, type RunDiff } from "../output/diff.ts";
+import { renderHandoff } from "../output/handoff.ts";
 import { reviewWorkload } from "../output/review.ts";
 import { renderSummary } from "../output/summary.ts";
 import type { HttpClient } from "../sources/http.ts";
@@ -176,6 +177,15 @@ export async function runSync(options: SyncOptions): Promise<SyncOutcome> {
       "decisions.csv": renderDecisionsCsv(report.decisions),
       "pulley-unmatched.csv": renderUnmatchedPulleyCsv(report),
       "summary.txt": summary,
+      "handoff.md": renderHandoff({
+        runId: inputs.runId,
+        sourceArchiveId: inputs.archiveDirectory.split(/[\\/]/).pop() ?? "unknown",
+        sourceAcquiredAt: inputs.sourceAcquiredAt,
+        source: inputs.source,
+        rulesVersion: RULES_VERSION,
+        implementationSha256: implementation,
+        report,
+      }),
       [RUN_RECORD]: renderRunRecord({
         runId: inputs.runId,
         createdAt: publishedAt,

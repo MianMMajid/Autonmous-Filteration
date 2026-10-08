@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -60,6 +60,16 @@ describe("createRunId", () => {
 });
 
 describe("RawArchive", () => {
+  it("keeps newly archived customer data private regardless of a permissive umask", async () => {
+    const archive = new RawArchive(dataDir, "2026-10-08T09-00-00-000Z");
+    await archive.init();
+    await archive.write("report.csv", "key-dates", "private report");
+    await archive.finalize();
+    for (const directory of [join(dataDir, "raw"), archive.directory])
+      expect((await stat(directory)).mode & 0o077).toBe(0);
+    for (const name of ["report.csv", "manifest.json"])
+      expect((await stat(join(archive.directory, name))).mode & 0o077).toBe(0);
+  });
   it("writes files and a manifest, and the newest archive is loadable", async () => {
     const older = new RawArchive(dataDir, "2026-10-08T10-00-00Z");
     await older.init();

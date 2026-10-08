@@ -19,6 +19,7 @@ const ABSORBABLE_TYPES: ReadonlySet<string> = new Set([
   "coffee tenant",
   "deli remodel",
   "pharmacy relocation",
+  "ev charging",
 ]);
 
 export function typeKey(value: string): string {

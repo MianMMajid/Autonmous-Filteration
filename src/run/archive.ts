@@ -68,8 +68,8 @@ export class RawArchive {
   /** Creates the run directory exclusively: an existing one is a run-id collision, never reused. */
   async init(): Promise<void> {
     try {
-      await mkdir(join(this.directory, ".."), { recursive: true });
-      await mkdir(this.directory);
+      await mkdir(join(this.directory, ".."), { recursive: true, mode: 0o700 });
+      await mkdir(this.directory, { mode: 0o700 });
     } catch (error) {
       const collision =
         typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
@@ -94,7 +94,7 @@ export class RawArchive {
     const safeName = name;
     const path = join(this.directory, safeName);
     try {
-      await writeFile(path, content, { flag: "wx" });
+      await writeFile(path, content, { flag: "wx", mode: 0o600, flush: true });
     } catch (error) {
       throw new IoError(`Could not write ${path}`, { cause: error });
     }
@@ -130,7 +130,11 @@ export class RawArchive {
     };
     const path = join(this.directory, MANIFEST_FILENAME);
     try {
-      await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
+      await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, {
+        flag: "wx",
+        mode: 0o600,
+        flush: true,
+      });
     } catch (error) {
       throw new IoError(`Could not write ${path}`, { cause: error });
     }

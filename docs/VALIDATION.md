@@ -1,5 +1,10 @@
 # Validation
 
+Current rules are **2026-10-08.9**. See [the current readiness evidence](READINESS_COMPLETION.md)
+and [the 50-case source-record review](validation/2026-10-08-record-review.md).
+Sections below retain historical tuning observations; they are not independent
+accuracy measurements for the current implementation.
+
 Hand check of the matcher's output on the 2026-10-08 dataset, the rule
 changes it produced, and the match-rate estimate for the submission.
 
@@ -124,7 +129,7 @@ latest live archive leaves the mapping byte-identical at 309/41/50, and the
 published pointer is unchanged. See `SYNTHETIC_AUDIT.md` for the cases, limits,
 and reproduction command.
 
-## Current replay — rules 2026-10-08.8
+## Historical replay — rules 2026-10-08.8
 
 The review follow-up narrows the temporal hold to ambiguous ownership. An offline
 replay of archive `2026-10-08T19-21-15-120Z` yields **324 matched, 26 review,

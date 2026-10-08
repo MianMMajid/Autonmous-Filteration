@@ -149,11 +149,11 @@ describe("matchProjects: tier 2, store plus type and year", () => {
     expect(d).toMatchObject({ status: "matched", pulleyId: "prj_old" });
   });
 
-  it("sends a type mismatch to review instead of forcing it", () => {
+  it("requires year evidence before folding EV into an umbrella permit", () => {
     const d = one({ projectType: "EV Charging" }, [
       pulley({ id: "prj_rm", name: "#1556 Reno, NV", projectType: "Remodel" }),
     ]);
-    expect(d).toMatchObject({ status: "needs_review", reason: ReasonCode.TypeMismatch });
+    expect(d).toMatchObject({ status: "needs_review", reason: ReasonCode.InsufficientEvidence });
   });
 
   it("does not trust a bare sequence as a store number", () => {
@@ -743,7 +743,7 @@ describe("matchProjects on the real dataset", () => {
   });
 
   it("retains conflicting and ambiguous holds while allowing unique yearless store matches", () => {
-    expect(report.counts).toEqual({ matched: 324, needs_review: 26, no_match: 50 });
+    expect(report.counts).toEqual({ matched: 323, needs_review: 27, no_match: 50 });
     for (const id of ["1992.1000", "5746.1003", "5970.1004", "3960.1001", "6409.1005"]) {
       expect(report.decisions.find((d) => d.acmeId === id)?.status, id).toBe("needs_review");
     }

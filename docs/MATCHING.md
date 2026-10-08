@@ -88,7 +88,7 @@ Address keys retain building designators in both prefix and suffix forms. Street
 suffixes and directionals are normalized by position; words inside the street's
 proper name are preserved (North Street is not silently equated with N Street).
 
-**Safety gate (rules 2026-10-08.8).** Ranking is not sufficient for acceptance.
+**Safety gate (rules 2026-10-08.9).** Ranking is not sufficient for acceptance.
 `domain/match/safety.ts` is used by the matcher, overrides, and publication:
 
 - Exact IDs do not bypass temporal contradictions. Explicit year conflicts,
@@ -96,6 +96,10 @@ proper name are preserved (North Street is not silently equated with N Street).
   180 days apart produce `EVIDENCE_CONFLICT`. The 180-day threshold is a
   conservative review trigger, not proof of a wrong mapping. Submission uses
   actual dates when available, otherwise projected dates.
+- Both Acme and Pulley names are checked against structured identity, state,
+  banner, signage and cancellation fields. Source contradictions are held even
+  when no candidate exists. Explicit signage phrases such as Sign Permit and
+  Pylon Sign are recognized without misclassifying Design or Sign Off.
 - A close milestone cannot hide other contradictory milestones. Name/field
   disagreements about cancellation, signage, organization, or state also go
   to review. Incompatible types and explicitly different buildings cannot be
@@ -148,7 +152,10 @@ lines are filed under Remodel or Expansion permits at the same store and
 year. Candidates are therefore judged on *compatible* type: equal types, or
 a Pulley umbrella type (Remodel, Expansion, New Build) covering an Acme line
 of type Remodel, Expansion, Coffee Tenant, Deli Remodel, or Pharmacy
-Relocation. EV Charging only matches EV Charging. Signage never matches.
+Relocation or EV Charging. EV-to-umbrella folding additionally requires a known
+permit year and no compatible dedicated EV candidate; otherwise a reviewer must
+confirm the permit scope. This is directional: Remodel cannot fold into an EV
+permit. Signage never folds into these permits.
 
 ## Temporal evidence
 
@@ -287,14 +294,16 @@ id, never by map iteration order. A test enforces this.
 
 | Outcome | Count |
 |---|---|
-| matched | 324 (tier 1: 92, tier 2: 195, tier 3: 15, tier 4: 14, tier 5: 8) |
-| needs_review | 26 (5 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
+| matched | 323 (tier 1: 92, tier 2: 194, tier 3: 14, tier 4: 15, tier 5: 8) |
+| needs_review | 27 (6 insufficient evidence, 7 evidence conflicts, 4 ambiguous, 4 status conflicts, 3 type mismatches, 2 outside scope, 1 weak) |
 | no_match | 50 (21 no candidate, 24 other year or other line, 5 pathfinder only) |
 | status differences on matched rows | 29 (reported, not an outcome) |
 
 These are coverage counts, not an accuracy measurement. Narrowing the temporal
 requirement restores 15 unique store matches relative to rules 2026-10-08.7;
-all seven evidence-conflict holds remain. See `docs/VALIDATION.md`
+all seven evidence-conflict holds remain. Rules .9 additionally withhold EV row 1679.1001: allowing umbrella permits
+introduces a second compatible candidate, so its undated dedicated EV permit
+no longer qualifies for the unique-candidate exception. See `docs/VALIDATION.md`
 for historical tuning and the remaining independent-validation requirement. Counts come from `tests/domain/match/matcher.test.ts`
 running the matcher over the archived fixtures; they will drift as the data
 changes.

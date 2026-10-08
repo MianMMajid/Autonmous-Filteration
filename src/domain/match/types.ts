@@ -140,6 +140,8 @@ export interface MatchDecision {
   readonly candidates: readonly Candidate[];
   /** One-line human explanation for the review file. */
   readonly note: string;
+  /** Structured review guidance; absent on historical records. */
+  readonly reviewResolution?: "source_correction" | "human_confirmation";
   /** For matched rows, a status difference worth syncing (e.g. Pulley Complete while Acme is Active); null otherwise. */
   readonly statusDrift: string | null;
 }
