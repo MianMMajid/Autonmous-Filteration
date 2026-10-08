@@ -32,12 +32,16 @@ Pulley API ──X-API-Key──▶ cursor pagination ──▶ projects.json �
 | `src/config.ts` | env parsing via Zod | done |
 | `src/logger.ts` | pino with redaction | done |
 | `src/errors.ts` | typed errors and exit codes | done |
-| `src/sources/siteledger/` | auth, report download, XLS/XLSX/CSV parsing | phase 1 |
-| `src/sources/pulley/` | paginated client, response schema | phase 1 |
+| `src/sources/http.ts` | fetch wrapper: retries, timeouts, status-to-error mapping | done |
+| `src/sources/siteledger/` | auth, report download, XLS/XLSX/CSV parsing | done |
+| `src/sources/pulley/` | paginated client, response schema | done |
+| `src/sources/vocab.ts` | unknown-value detection for categorical fields | done |
 | `src/domain/normalize/` | name parser, address normalizer, canonical records | phase 2 |
 | `src/domain/match/` | candidate pool, tiers, reason codes | phase 3 |
 | `src/output/` | CSV writers, summary, run diff | phase 4 |
-| `src/run/` | run directory, lock file, archive | phase 4 |
+| `src/run/archive.ts` | raw-input archive and replay | done |
+| `src/run/acquire.ts` | live fetch or archive replay, parse, drift report | done |
+| `src/run/` (lock, outputs) | lock file, output directory, latest pointer | phase 4 |
 
 Dependency direction is one way: `cli -> run -> (sources | domain | output)`.
 `domain` imports nothing from `sources` or `output`; it works on plain typed

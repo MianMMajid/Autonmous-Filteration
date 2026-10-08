@@ -12,6 +12,7 @@ import { Command } from "commander";
 import { loadConfig } from "./config.ts";
 import { ExitCode, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
+import { acquireInputs } from "./run/acquire.ts";
 
 const program = new Command();
 
@@ -30,9 +31,32 @@ program
   .action(async (options: { dryRun?: boolean }) => {
     const config = loadConfig();
     const log = createLogger(config.logLevel);
-    log.info({ dryRun: options.dryRun === true, dataDir: config.dataDir }, "sync starting");
-    // Phases 1-4 land here: acquisition -> normalization -> matching -> output.
-    log.warn("sync is not implemented yet (Phase 0 scaffold)");
+    const dryRun = options.dryRun === true;
+    log.info({ dryRun, dataDir: config.dataDir }, "sync starting");
+
+    const inputs = await acquireInputs({ config, log, dryRun });
+
+    log.info(
+      {
+        runId: inputs.runId,
+        source: inputs.source,
+        acmeProjects: inputs.acme.projects.length,
+        acmeSites: inputs.acme.sites.length,
+        acmeKeyDates: inputs.acme.keyDates.length,
+        pulleyProjects: inputs.pulley.length,
+      },
+      "inputs acquired",
+    );
+    for (const warning of inputs.warnings) log.warn(warning);
+    for (const drift of inputs.vocabulary) {
+      log.warn(
+        drift,
+        `unknown ${drift.source} ${drift.field} value "${drift.value}" (${drift.count}x)`,
+      );
+    }
+
+    // Phases 2-4 land here: normalization -> matching -> output.
+    log.warn("matching is not implemented yet (Phase 1: acquisition only)");
   });
 
 async function main(): Promise<void> {
@@ -42,6 +66,9 @@ async function main(): Promise<void> {
     const error = toError(raw);
     if (error instanceof SyncError) {
       console.error(`${error.name}: ${error.message}`);
+      if (Object.keys(error.details).length > 0) {
+        console.error(JSON.stringify(error.details, null, 2));
+      }
       process.exit(error.exitCode);
     }
     console.error(`Unexpected error: ${error.message}`);
