@@ -14,10 +14,16 @@
  * Exit codes are defined in src/errors.ts and documented in README.md.
  */
 
+import { resolve } from "node:path";
 import { Command, InvalidArgumentError } from "commander";
 import { loadConfig, loadLocalConfig } from "./config.ts";
 import { ExitCode, StaleError, SyncError, toError } from "./errors.ts";
 import { createLogger } from "./logger.ts";
+import { backupState, restoreState, verifyBackup } from "./run/backup.ts";
+import { evaluateRun } from "./run/evaluate.ts";
+import { verifyOutputDirectory } from "./run/integrity.ts";
+import { monitorPublication } from "./run/monitor.ts";
+import { latestRunId, readRunRecord } from "./run/outputs.ts";
 import { readPublishedStatus, renderStatus } from "./run/status.ts";
 import { runSync } from "./run/sync.ts";
 import { TOOL_VERSION } from "./version.ts";
@@ -49,9 +55,9 @@ program
       acceptInputChange?: boolean;
       quiet?: boolean;
     }) => {
-      const config = loadConfig();
-      const log = createLogger(config.logLevel);
       const dryRun = options.dryRun === true || options.replay !== undefined;
+      const config = dryRun ? loadLocalConfig() : loadConfig();
+      const log = createLogger(config.logLevel);
       log.info(
         { dryRun, replay: options.replay ?? null, dataDir: config.dataDir },
         "sync starting",
@@ -75,6 +81,7 @@ program
 program
   .command("status")
   .description("Show the last published result and how old it and its source data are.")
+  .option("--json", "output machine-readable publication status")
   .option(
     "--max-age-hours <hours>",
     "exit with code 9 if the last result was published longer ago than this",
@@ -85,13 +92,13 @@ program
     "exit with code 9 if the source data behind it was fetched longer ago than this",
     parseHours,
   )
-  .action(async (options: { maxAgeHours?: number; maxSourceAgeHours?: number }) => {
+  .action(async (options: { maxAgeHours?: number; maxSourceAgeHours?: number; json?: boolean }) => {
     // Local only: reads data/, never needs credentials.
     const config = loadLocalConfig();
     const maxAge = options.maxAgeHours ?? null;
     const maxSourceAge = options.maxSourceAgeHours ?? null;
     const status = await readPublishedStatus(config.dataDir);
-    console.log(renderStatus(status, maxAge, maxSourceAge));
+    console.log(options.json ? JSON.stringify(status) : renderStatus(status, maxAge, maxSourceAge));
     if (!status) throw new StaleError("No published result yet");
     if (maxAge !== null && status.ageHours > maxAge) {
       throw new StaleError(
@@ -110,6 +117,58 @@ program
         { details: { runId: status.runId, sourceAcquiredAt: status.sourceAcquiredAt } },
       );
     }
+  });
+
+program
+  .command("published-path")
+  .description("Print the absolute, verified immutable output directory (no credentials).")
+  .action(async () => {
+    const config = loadLocalConfig();
+    const runId = await latestRunId(config.dataDir);
+    if (!runId) throw new StaleError("No published result yet");
+    await readRunRecord(config.dataDir, runId);
+    const directory = resolve(config.dataDir, "out", runId);
+    await verifyOutputDirectory(directory, runId);
+    console.log(directory);
+  });
+
+program
+  .command("backup <destination>")
+  .description("Create an immutable, verified snapshot including source and overrides.")
+  .action(async (destination: string) =>
+    console.log(await backupState(loadLocalConfig().dataDir, destination)),
+  );
+program
+  .command("verify-backup <snapshot>")
+  .description("Verify a backup without credentials or changing state.")
+  .action(async (snapshot: string) => console.log(JSON.stringify(await verifyBackup(snapshot))));
+program
+  .command("restore <snapshot> <destination>")
+  .description("Restore verified state into a NEW data directory; never overwrites existing data.")
+  .action(async (snapshot: string, destination: string) => {
+    await restoreState(snapshot, destination);
+    console.log(resolve(destination));
+  });
+
+program
+  .command("evaluate <runId> <labels>")
+  .description(
+    "Compare a run with independent adjudicated labels; outputs JSON, never changes mappings.",
+  )
+  .action(async (runId: string, labels: string) =>
+    console.log(
+      JSON.stringify(await evaluateRun(loadLocalConfig().dataDir, runId, labels), null, 2),
+    ),
+  );
+program
+  .command("monitor <schedule>")
+  .description(
+    "Verify scheduled publication and source freshness; run from an independent monitor.",
+  )
+  .action(async (schedule: string) => {
+    const result = await monitorPublication(loadLocalConfig().dataDir, schedule);
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.healthy) throw new StaleError(result.problems.join("; "));
   });
 
 function parseHours(value: string): number {

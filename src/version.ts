@@ -12,8 +12,9 @@ export const TOOL_VERSION = (
 ).version;
 
 /** Content identity includes uncommitted code and dependencies; does not need Git at runtime. */
-export async function implementationSha256(): Promise<string> {
-  const root = fileURLToPath(new URL("./", import.meta.url));
+export async function implementationSha256(
+  root = fileURLToPath(new URL("./", import.meta.url)),
+): Promise<string> {
   const files: string[] = [];
   const visit = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -29,8 +30,8 @@ export async function implementationSha256(): Promise<string> {
       hash.update(relative(root, path).replaceAll("\\", "/")).update("\0");
       hash.update(await readFile(path)).update("\0");
     }
-    hash.update(await readFile(new URL("../package.json", import.meta.url)));
-    hash.update(await readFile(new URL("../pnpm-lock.yaml", import.meta.url)));
+    hash.update(await readFile(join(root, "..", "package.json")));
+    hash.update(await readFile(join(root, "..", "pnpm-lock.yaml")));
     return hash.digest("hex");
   } catch (error) {
     throw new IoError("Could not fingerprint the implementation and dependency lockfile", {

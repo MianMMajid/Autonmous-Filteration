@@ -1,10 +1,26 @@
-import { access, mkdir, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { MatchDecision } from "../domain/match/types.ts";
-import { IoError } from "../errors.ts";
+import { IoError, SchemaError } from "../errors.ts";
 import type { PreviousDecision } from "../output/diff.ts";
 import { RUN_ID_PATTERN } from "./archive.ts";
+import {
+  OUTPUT_MANIFEST,
+  outputManifest,
+  readRegularFile,
+  verifyOutputDirectory,
+} from "./integrity.ts";
 
 /**
  * Output directory handling.
@@ -29,6 +45,8 @@ export async function writeOutputs(
   runId: string,
   files: OutputFiles,
 ): Promise<string> {
+  if (!RUN_ID_PATTERN.test(runId)) throw new SchemaError("Invalid output run id");
+  const manifest = outputManifest(runId, files);
   const outRoot = join(dataDir, OUT_DIRNAME);
   const partial = join(outRoot, `${runId}.partial`);
   const final = join(outRoot, runId);
@@ -39,10 +57,11 @@ export async function writeOutputs(
   }
   try {
     await rm(partial, { recursive: true, force: true });
-    await mkdir(partial, { recursive: true });
+    await mkdir(partial, { recursive: true, mode: 0o700 });
     for (const [name, content] of Object.entries(files)) {
-      await writeFile(join(partial, name), content);
+      await writeFile(join(partial, name), content, { mode: 0o600, flush: true });
     }
+    await writeFile(join(partial, OUTPUT_MANIFEST), manifest, { mode: 0o600, flush: true });
     await rename(partial, final);
   } catch (error) {
     await rm(partial, { recursive: true, force: true }).catch(() => undefined);
@@ -51,12 +70,13 @@ export async function writeOutputs(
   return final;
 }
 
-export async function updateLatest(dataDir: string, runId: string): Promise<void> {
+export async function updateLatest(dataDir: string, runId: string): Promise<string | null> {
+  if (!RUN_ID_PATTERN.test(runId)) throw new SchemaError("Invalid output run id");
   const outRoot = join(dataDir, OUT_DIRNAME);
   const pointer = join(outRoot, LATEST_POINTER);
   const tmp = `${pointer}.tmp`;
   try {
-    await writeFile(tmp, `${JSON.stringify({ runId }, null, 2)}\n`);
+    await writeFile(tmp, `${JSON.stringify({ runId }, null, 2)}\n`, { mode: 0o600, flush: true });
     await rename(tmp, pointer);
   } catch (error) {
     throw new IoError(`Could not update ${pointer}`, { cause: error });
@@ -68,8 +88,10 @@ export async function updateLatest(dataDir: string, runId: string): Promise<void
     await rm(tmpLink, { force: true });
     await symlink(runId, tmpLink, "dir");
     await rename(tmpLink, link);
+    return null;
   } catch {
     await rm(tmpLink, { force: true }).catch(() => undefined);
+    return "Published JSON pointer, but could not refresh convenience symlink; use the run directory from latest.json";
   }
 }
 
@@ -93,7 +115,7 @@ async function exists(path: string): Promise<boolean> {
  */
 export async function pruneRuns(dataDir: string, keep: number): Promise<string[]> {
   const removed: string[] = [];
-  const latest = await currentLatestRunId(dataDir);
+  const latest = await latestRunId(dataDir);
   const outRoot = join(dataDir, OUT_DIRNAME);
   const rawRoot = join(dataDir, "raw");
 
@@ -137,8 +159,9 @@ async function runDirectories(root: string): Promise<string[]> {
       .filter((e) => e.isDirectory() && RUN_DIR.test(e.name))
       .map((e) => e.name)
       .sort();
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw new IoError("Could not inspect retention directories", { cause: error });
   }
 }
 
@@ -148,29 +171,22 @@ async function referencedArchive(outputDirectory: string): Promise<string | null
     const record = z
       .looseObject({ inputs: z.looseObject({ archiveDirectory: z.string() }).optional() })
       .safeParse(JSON.parse(await readFile(join(outputDirectory, RUN_RECORD), "utf8")));
-    const directory = record.success ? record.data.inputs?.archiveDirectory : undefined;
-    if (!directory) return null;
+    if (!record.success) throw new SchemaError("Invalid retained run record; refusing retention");
+    const directory = record.data.inputs?.archiveDirectory;
+    if (!directory) return outputDirectory.split(/[\\/]/).pop() ?? null;
     const name = directory.split(/[\\/]/).filter(Boolean).pop() ?? null;
-    return name && RUN_DIR.test(name) ? name : null;
-  } catch {
-    return null;
-  }
-}
-
-async function currentLatestRunId(dataDir: string): Promise<string | null> {
-  try {
-    const pointer = latestPointerSchema.safeParse(
-      JSON.parse(await readFile(join(dataDir, OUT_DIRNAME, LATEST_POINTER), "utf8")),
-    );
-    return pointer.success ? pointer.data.runId : null;
-  } catch {
-    return null;
+    if (!name || !RUN_DIR.test(name)) throw new SchemaError("Invalid retained archive reference");
+    return name;
+  } catch (error) {
+    throw new IoError("Could not verify retained archive references; refusing retention", {
+      cause: error,
+    });
   }
 }
 
 // ---------- Run record ----------
 
-const latestPointerSchema = z.object({ runId: z.string().min(1) });
+const latestPointerSchema = z.object({ runId: z.string().regex(RUN_ID_PATTERN) });
 
 const previousDecisionSchema = z.looseObject({
   acmeId: z.string().min(1),
@@ -179,17 +195,17 @@ const previousDecisionSchema = z.looseObject({
 });
 
 const inputCountsSchema = z.object({
-  acmeProjects: z.number().int(),
-  acmeSites: z.number().int(),
-  acmeKeyDates: z.number().int(),
-  pulleyProjects: z.number().int(),
+  acmeProjects: z.number().int().nonnegative(),
+  acmeSites: z.number().int().nonnegative(),
+  acmeKeyDates: z.number().int().nonnegative(),
+  pulleyProjects: z.number().int().nonnegative(),
 });
 
 const runRecordSchema = z.looseObject({
-  version: z.union([z.literal(1), z.literal(2)]),
-  runId: z.string().min(1),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  runId: z.string().regex(RUN_ID_PATTERN),
   decisions: z.array(previousDecisionSchema),
-  counts: z.object({ matched: z.number().int() }).loose().optional(),
+  counts: z.object({ matched: z.number().int().nonnegative() }).loose().optional(),
   inputs: z.object({ counts: inputCountsSchema }).loose().optional(),
 });
 
@@ -236,7 +252,7 @@ export interface RunRecordInput {
 }
 
 export function renderRunRecord(input: RunRecordInput): string {
-  return `${JSON.stringify({ version: 2, ...input }, null, 2)}\n`;
+  return `${JSON.stringify({ version: 3, ...input }, null, 2)}\n`;
 }
 
 export interface PreviousRun {
@@ -251,35 +267,92 @@ export interface PreviousRun {
   readonly matched: number | null;
 }
 
-/** The last successful run, via `latest.json`; null when there is none or it is unreadable. */
+/** Only an empty output history is a first run. Damaged state must be restored explicitly. */
+export async function latestRunId(dataDir: string): Promise<string | null> {
+  const root = join(dataDir, OUT_DIRNAME);
+  let raw: string;
+  try {
+    const pointer = join(root, LATEST_POINTER);
+    const stat = await lstat(pointer);
+    if (!stat.isFile() || stat.size > 4096)
+      throw new SchemaError("Invalid publication pointer file");
+    raw = await readFile(pointer, "utf8");
+  } catch (error) {
+    if (!isMissing(error))
+      throw new IoError("Could not read publication pointer", { cause: error });
+    let entries: string[];
+    try {
+      entries = await readdir(root);
+    } catch (listError) {
+      if (isMissing(listError)) return null;
+      throw new IoError("Could not inspect output history", { cause: listError });
+    }
+    if (entries.some((name) => RUN_ID_PATTERN.test(name) || name === "latest"))
+      throw new SchemaError(
+        "Publication pointer missing despite existing output history; restore a verified snapshot before syncing",
+      );
+    return null;
+  }
+  try {
+    const pointer = latestPointerSchema.safeParse(JSON.parse(raw));
+    if (pointer.success) return pointer.data.runId;
+  } catch {
+    /* Invalid JSON is corrupted state, not first run. */
+  }
+  throw new SchemaError("Invalid publication pointer; restore a verified snapshot before syncing");
+}
+
+export async function readRunRecord(dataDir: string, runId: string) {
+  if (!RUN_ID_PATTERN.test(runId)) throw new SchemaError("Invalid output run id");
+  let raw: string;
+  try {
+    raw = (await readRegularFile(join(dataDir, OUT_DIRNAME, runId, RUN_RECORD))).toString("utf8");
+  } catch (error) {
+    throw new IoError("Could not read published run record; restore history before syncing", {
+      cause: error,
+    });
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (error) {
+    throw new SchemaError("Malformed published run record", { cause: error });
+  }
+  const result = runRecordSchema.safeParse(json);
+  if (!result.success || result.data.runId !== runId)
+    throw new SchemaError("Invalid published run record or mismatched run identity");
+  const record = result.data;
+  if (record.version >= 3) await verifyOutputDirectory(join(dataDir, OUT_DIRNAME, runId), runId);
+  const matched = record.decisions.filter((d) => d.status === "matched").length;
+  if (
+    new Set(record.decisions.map((d) => d.acmeId)).size !== record.decisions.length ||
+    record.decisions.some(
+      (d) => (d.status === "matched") !== (d.pulleyId !== null && d.pulleyId !== ""),
+    ) ||
+    (record.counts && record.counts.matched !== matched) ||
+    (record.version >= 2 && (!record.counts || !record.inputs))
+  )
+    throw new SchemaError("Published run record has missing or inconsistent comparison fields");
+  return record;
+}
+
 export async function loadPreviousRun(dataDir: string): Promise<PreviousRun | null> {
-  const outRoot = join(dataDir, OUT_DIRNAME);
-  let runId: string;
-  try {
-    const pointer = latestPointerSchema.safeParse(
-      JSON.parse(await readFile(join(outRoot, LATEST_POINTER), "utf8")),
-    );
-    if (!pointer.success) return null;
-    runId = pointer.data.runId;
-  } catch {
-    return null;
-  }
-  try {
-    const record = runRecordSchema.safeParse(
-      JSON.parse(await readFile(join(outRoot, runId, RUN_RECORD), "utf8")),
-    );
-    if (!record.success) return null;
-    return {
-      runId: record.data.runId,
-      decisions: record.data.decisions.map((d) => ({
-        acmeId: d.acmeId,
-        status: d.status,
-        pulleyId: d.pulleyId,
-      })),
-      inputCounts: record.data.inputs?.counts ?? null,
-      matched: record.data.counts?.matched ?? null,
-    };
-  } catch {
-    return null;
-  }
+  const runId = await latestRunId(dataDir);
+  if (runId === null) return null;
+  const record = await readRunRecord(dataDir, runId);
+  return {
+    runId,
+    decisions: record.decisions.map((d) => ({
+      acmeId: d.acmeId,
+      status: d.status,
+      pulleyId: d.pulleyId,
+    })),
+    inputCounts: record.inputs?.counts ?? null,
+    matched:
+      record.counts?.matched ?? record.decisions.filter((d) => d.status === "matched").length,
+  };
+}
+
+function isMissing(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

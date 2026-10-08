@@ -2,6 +2,7 @@ import { parse as parseCsv } from "csv-parse/sync";
 import { read as readWorkbook, utils as sheetUtils } from "xlsx";
 import type { z } from "zod";
 import { SchemaError } from "../../errors.ts";
+import { checkInputBytes, checkWorkbookExpansion, MAX_COLUMNS, MAX_ROWS } from "../limits.ts";
 import {
   type ColumnSpec,
   KEY_DATES_COLUMNS,
@@ -48,10 +49,12 @@ export function parseSiteDirectory(bytes: Uint8Array): ParsedReport<SiteDirector
 
 /** Key Dates: CSV, header on the first row, US-formatted dates. */
 export function parseKeyDates(bytes: Uint8Array | string): ParsedReport<KeyDatesRow> {
+  checkInputBytes(bytes);
   const text = typeof bytes === "string" ? bytes : new TextDecoder("utf-8").decode(bytes);
   let grid: unknown[][];
   try {
     grid = parseCsv(text, {
+      max_record_size: 65536,
       bom: true,
       columns: false,
       skip_empty_lines: true,
@@ -67,12 +70,19 @@ export function parseKeyDates(bytes: Uint8Array | string): ParsedReport<KeyDates
 // ---------- Internals ----------
 
 function workbookGrid(bytes: Uint8Array, reportName: string): unknown[][] {
+  checkWorkbookExpansion(bytes);
   if (bytes.byteLength === 0) {
     throw new SchemaError(`${reportName}: report is empty`);
   }
   let workbook: ReturnType<typeof readWorkbook>;
   try {
-    workbook = readWorkbook(bytes, { type: "array", cellDates: false, raw: true });
+    workbook = readWorkbook(bytes, {
+      type: "array",
+      cellDates: false,
+      raw: true,
+      sheets: 0,
+      sheetRows: MAX_ROWS + 7,
+    });
   } catch (error) {
     throw new SchemaError(`${reportName}: could not read workbook`, { cause: error });
   }
@@ -81,6 +91,9 @@ function workbookGrid(bytes: Uint8Array, reportName: string): unknown[][] {
   if (!sheetName || !sheet) {
     throw new SchemaError(`${reportName}: workbook has no sheets`);
   }
+  const range = sheetUtils.decode_range(String(sheet["!fullref"] ?? sheet["!ref"] ?? "A1"));
+  if (range.e.r >= MAX_ROWS + 6 || range.e.c >= MAX_COLUMNS)
+    throw new SchemaError(`${reportName}: workbook exceeds row or column limits`);
   return sheetUtils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     raw: true,
@@ -104,6 +117,8 @@ function parseGrid<S extends z.ZodType>(
   columns: readonly ColumnSpec[],
   schema: S,
 ): ParsedReport<z.output<S>> {
+  if (grid.length > MAX_ROWS + 6 || grid.some((row) => row.length > MAX_COLUMNS))
+    throw new SchemaError(`${reportName}: report exceeds row or column limits`);
   const warnings: string[] = [];
   const headerIndex = findHeaderRow(grid, columns);
   if (headerIndex === -1) {
@@ -152,6 +167,8 @@ function parseGrid<S extends z.ZodType>(
     }
   }
 
+  if (rows.length > MAX_ROWS)
+    throw new SchemaError(`${reportName}: report exceeds ${MAX_ROWS} rows`);
   if (problems.length > 0) {
     throw new SchemaError(`${reportName}: ${problems.length} row(s) failed validation`, {
       details: { problems },

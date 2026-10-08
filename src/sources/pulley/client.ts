@@ -1,6 +1,7 @@
 import { SchemaError } from "../../errors.ts";
 import type { Logger } from "../../logger.ts";
 import type { HttpClient } from "../http.ts";
+import { MAX_ROWS } from "../limits.ts";
 import { type PulleyProject, pulleyPageSchema } from "./schema.ts";
 
 /**
@@ -87,6 +88,7 @@ export class PulleyClient {
     const warnings: string[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | null = null;
+    let totalBytes = 0;
 
     for (;;) {
       if (pages.length >= this.#maxPages) {
@@ -95,7 +97,12 @@ export class PulleyClient {
         );
       }
       const page = await this.#fetchPage(cursor, pages.length + 1);
+      totalBytes += Buffer.byteLength(page.body);
+      if (totalBytes > 96 * 1024 * 1024)
+        throw new SchemaError("Pulley snapshot exceeds 96 MiB total byte limit");
       pages.push({ cursor, body: page.body });
+      if (all.length + page.projects.length > MAX_ROWS)
+        throw new SchemaError(`Pulley projects exceed ${MAX_ROWS} row limit`);
       all.push(...page.projects);
 
       const next: string | null = page.nextCursor;

@@ -4,6 +4,21 @@ All notable changes to this project. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Added and fixed — 0.2.0 (matching rules unchanged)
+
+- Fail closed on damaged history, use verified immutable output paths in automated
+  consumers, and permit offline replay without live credentials (round-four fixes).
+- Version 3 records, output hashes, captured overrides, verified portable backups
+  including implementation bytes, and non-overwriting restoration into a new directory.
+- Independent-label evaluation and schedule-aware publication/source monitoring.
+- Streamed HTTP byte ceilings, report/ZIP expansion and row limits, HTTPS-only
+  production configuration, and static safe error descriptions.
+- Opt-in persistent-host scheduling with protected backups and an external success
+  heartbeat. Removed customer data from Actions caches. Pinned action commits,
+  added Dependabot and Linux/macOS CI. Activation requires DEPLOYMENT.md setup.
+- Regression and restore drills in tests/audit-round-4.test.ts; synthetic capacity
+  probe in scripts/benchmark.mjs. No live deployment or accuracy sign-off implied.
+
 ### Fixed — 0.1.1, rules 2026-10-08.5
 
 - Round-three findings: disputed joins and duplicate source evidence remain

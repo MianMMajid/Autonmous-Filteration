@@ -19,8 +19,8 @@ import type { Logger } from "../logger.ts";
  *   honoring `Retry-After` within a cumulative waiting budget, then `NetworkError`.
  * - Any other status: `NetworkError` without retry.
  *
- * Error messages include the upstream JSON `message` when one is present, so
- * "HTTP 400: The cursor parameter is not valid." reaches the operator intact.
+ * Error messages use static descriptions of recognized upstream error codes.
+ * Arbitrary response bodies and transport messages never reach logs.
  */
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -35,6 +35,7 @@ export interface HttpClientOptions {
   readonly maxDelayMs?: number;
   /** Total retry waiting budget per request. Longer server cooldowns fail explicitly. */
   readonly maxRetryWaitMs?: number;
+  readonly maxResponseBytes?: number;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly log?: Logger;
 }
@@ -61,6 +62,7 @@ type Attempt =
 const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 export class HttpClient {
+  readonly #maxResponseBytes: number;
   readonly #fetch: FetchLike;
   readonly #retries: number;
   readonly #timeoutMs: number;
@@ -71,6 +73,13 @@ export class HttpClient {
   readonly #log: Logger | undefined;
 
   constructor(options: HttpClientOptions = {}) {
+    this.#maxResponseBytes = options.maxResponseBytes ?? 32 * 1024 * 1024;
+    if (
+      !Number.isSafeInteger(this.#maxResponseBytes) ||
+      this.#maxResponseBytes < 1 ||
+      this.#maxResponseBytes > 128 * 1024 * 1024
+    )
+      throw new RangeError("maxResponseBytes must be between 1 and 134217728");
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
     this.#retries = options.retries ?? 3;
     this.#timeoutMs = options.timeoutMs ?? 30_000;
@@ -109,6 +118,7 @@ export class HttpClient {
 
       if (outcome.kind === "failure") {
         checkCanceled(init.signal, context);
+        if (outcome.error instanceof SchemaError) throw outcome.error;
         const failure = describeFailure(outcome.error);
         if (isLastAttempt) {
           throw new NetworkError(
@@ -162,7 +172,9 @@ export class HttpClient {
       });
       const isRedirect = response.status >= 300 && response.status < 400;
       if (isRedirect) await response.body?.cancel().catch(() => undefined);
-      const bytes = isRedirect ? new Uint8Array() : new Uint8Array(await response.arrayBuffer());
+      const bytes = isRedirect
+        ? new Uint8Array()
+        : await boundedBody(response, this.#maxResponseBytes);
       const result: HttpResult = {
         ok: response.ok,
         status: response.status,
@@ -248,8 +260,42 @@ async function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 function describeFailure(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  return String(error);
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
+    return error.name;
+  return "fetch failed";
+}
+
+async function boundedBody(response: Response, limit: number): Promise<Uint8Array> {
+  const declared = response.headers.get("content-length");
+  if (declared && /^\d+$/.test(declared) && Number(declared) > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new SchemaError(`HTTP response exceeds ${limit} byte limit`);
+  }
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      length += chunk.value.byteLength;
+      if (length > limit) {
+        await reader.cancel().catch(() => undefined);
+        throw new SchemaError(`HTTP response exceeds ${limit} byte limit`);
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function retryAfterMs(headers: Headers): number | undefined {
@@ -263,28 +309,30 @@ function retryAfterMs(headers: Headers): number | undefined {
 }
 
 /**
- * Best-effort human-readable reason from an error response body.
- * Prefers a JSON `message` field, falls back to a short text snippet.
+ * Static descriptions for recognized error codes; never reflects upstream text.
  */
 function upstreamMessage(raw: string): string | undefined {
-  const text = raw.trim();
-  if (!text) return undefined;
+  // Never echo arbitrary upstream text: it can contain reflected credentials.
   try {
-    const parsed: unknown = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && "message" in parsed) {
-      const message = (parsed as { message: unknown }).message;
-      if (typeof message === "string" && message.trim()) return message.trim();
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "error" in parsed) {
+      if (parsed.error === "invalid_credentials") return "Invalid username or password.";
+      if (parsed.error === "invalid_cursor") return "The cursor parameter is not valid.";
     }
   } catch {
-    // not JSON; fall through to the snippet
+    /* HTTP status is sufficient for unknown bodies. */
   }
-  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+  return undefined;
 }
 
 /** Strip query strings from URLs before they reach logs or error details. */
 function redactQuery(url: string): string {
-  const index = url.indexOf("?");
-  return index === -1 ? url : `${url.slice(0, index)}?[redacted]`;
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}${parsed.search ? "?[redacted]" : ""}`;
+  } catch {
+    return "[invalid URL]";
+  }
 }
 
 function checkCanceled(signal: AbortSignal | null | undefined, context: RequestContext): void {

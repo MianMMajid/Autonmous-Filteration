@@ -1,7 +1,8 @@
-import type { Config } from "../config.ts";
-import { SchemaError } from "../errors.ts";
+import { type Config, isLiveConfig, type LocalConfig } from "../config.ts";
+import { ConfigError, SchemaError } from "../errors.ts";
 import type { Logger } from "../logger.ts";
 import { HttpClient } from "../sources/http.ts";
+import { MAX_ROWS } from "../sources/limits.ts";
 import { dedupeProjects, PulleyClient } from "../sources/pulley/client.ts";
 import {
   PULLEY_ACCOUNT_PLANS,
@@ -60,7 +61,7 @@ export interface AcquiredInputs {
 }
 
 export interface AcquireOptions {
-  readonly config: Config;
+  readonly config: Config | LocalConfig;
   readonly log: Logger;
   readonly dryRun: boolean;
   /** With dryRun: replay this archived run instead of the newest one. */
@@ -78,6 +79,8 @@ export async function acquireInputs(options: AcquireOptions): Promise<AcquiredIn
 
 async function fetchLive(options: AcquireOptions): Promise<AcquiredInputs> {
   const { config, log } = options;
+  if (!isLiveConfig(config))
+    throw new ConfigError("Live acquisition requires upstream credentials");
   const now = options.now ?? (() => new Date());
   const http = options.http ?? new HttpClient({ log });
   const runId = createRunId(now());
@@ -176,6 +179,7 @@ async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
     throw new SchemaError(`Archive ${archive.directory} has no Pulley pages`);
   }
 
+  if (pageFiles.length > 200) throw new SchemaError("Archive exceeds 200 Pulley pages");
   const [projectRegister, siteDirectory, keyDates, ...pages] = await Promise.all([
     archive.read(one("project-register")),
     archive.read(one("site-directory")),
@@ -200,6 +204,8 @@ async function replayArchive(options: AcquireOptions): Promise<AcquiredInputs> {
         details: { issues: result.error.issues.slice(0, 10).map((issue) => issue.message) },
       });
     }
+    if (pulley.length + result.data.projects.length > MAX_ROWS)
+      throw new SchemaError("Archived Pulley projects exceed row limit");
     pulley.push(...result.data.projects);
   }
 

@@ -27,7 +27,10 @@ describe("pruneRuns", () => {
       const a = new RawArchive(dataDir, id);
       await a.init();
       await a.finalize();
-      await writeOutputs(dataDir, id, { "mapping.csv": "x" });
+      await writeOutputs(dataDir, id, {
+        "mapping.csv": "x",
+        "run.json": JSON.stringify({ inputs: { archiveDirectory: a.directory } }),
+      });
     }
     await updateLatest(dataDir, "2026-10-02T00-00-00Z"); // pretend an older run is the latest good one
     await mkdir(join(dataDir, "out", "keep-me"), { recursive: true });
